@@ -259,3 +259,7 @@ Resources and tools (verified in PubMed):
 19. Perez-Riverol Y, et al. The PRIDE database at 20 years: 2025 update. *Nucleic Acids Res.* 2025;53:D543-D553. [doi:10.1093/nar/gkae1011](https://doi.org/10.1093/nar/gkae1011)
 
 API documentation and client source code used for the implementation are cited at the top of each module in `dataops_mcp/` (GDC API docs, ENA Portal API, NCBI E-utilities, EGA metadata API, BioStudies API via the Bioconductor ArrayExpress package, ENCODE `encoded` schemas, CELLxGENE curation API spec, cBioPortal OpenAPI, PRIDE `pridepy`, Zenodo `zenodo-rdm`, nf-core pipeline schemas).
+
+## License
+
+MIT. See [LICENSE](LICENSE). Database logos in `docs/logos/` belong to their respective owners.

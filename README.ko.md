@@ -214,3 +214,7 @@ vi config.yaml && claude                         # 반드시 저장소 루트에
 ## 참고문헌
 
 [English README의 References](README.md#references)와 같습니다(19편, 모두 PubMed에서 확인, DOI 링크 포함).
+
+## 라이선스
+
+MIT. [LICENSE](LICENSE) 참고. `docs/logos/`의 데이터베이스 로고는 각 기관의 상표입니다.
