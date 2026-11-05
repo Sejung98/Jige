@@ -1,4 +1,6 @@
-# Genomics DataOps Team
+> *Jige (지게) is the Korean A-frame carrier that hauled heavy loads on one's back. This one hauls datasets from public archives onto your HPC.*
+
+# Jige: Genomics DataOps Team
 
 **Ask in plain language. It finds public biological datasets, downloads them as verified jobs on your own HPC, and prepares nf-core pipelines — with every number traced to a live API call and nothing executed without your approval.**
 
@@ -152,7 +154,7 @@ The automatic review (`preflight_check`) catches, among others: input species �
 Requirements: Linux HPC login node, Python ≥ 3.10, [Claude Code](https://code.claude.com/docs), `curl`; for pipelines Java 17+, Nextflow ≥ 25.10.4 and Singularity/Apptainer.
 
 ```bash
-git clone -b claude/genomics-dataops-team https://github.com/Sejung98/Personal_dataops_agent.git genomics-dataops-team
+git clone -b claude/genomics-dataops-team https://github.com/Sejung98/Jige.git genomics-dataops-team
 cd genomics-dataops-team && ./install.sh        # PYTHON=python3.11 ./install.sh, or --run-tests
 vi config.yaml && claude                         # start claude in the repository root
 ```

@@ -1,4 +1,6 @@
-# Genomics DataOps Team
+> *지게는 무거운 짐을 등에 지고 나르던 우리 전통 운반 도구입니다. 이 지게는 공공 데이터 저장소의 데이터를 연구실 HPC로 실어 나릅니다.*
+
+# Jige(지게): Genomics DataOps Team
 
 **자연어로 요청하면 공공 생물학 데이터를 찾고, 연구실 HPC에서 검증된 job으로 내려받고, nf-core 파이프라인까지 준비합니다. 모든 숫자는 실제 API 조회 결과에서 나오고, 사용자 승인 없이는 아무것도 실행하지 않습니다.**
 
@@ -152,7 +154,7 @@ flowchart TB
 요구사항: Linux HPC 로그인 노드, Python ≥ 3.10, [Claude Code](https://code.claude.com/docs), `curl`. 파이프라인 실행 시 Java 17+, Nextflow ≥ 25.10.4, Singularity/Apptainer.
 
 ```bash
-git clone -b claude/genomics-dataops-team https://github.com/Sejung98/Personal_dataops_agent.git genomics-dataops-team
+git clone -b claude/genomics-dataops-team https://github.com/Sejung98/Jige.git genomics-dataops-team
 cd genomics-dataops-team && ./install.sh        # PYTHON=python3.11 ./install.sh 또는 --run-tests
 vi config.yaml && claude                         # 반드시 저장소 루트에서 실행
 ```
