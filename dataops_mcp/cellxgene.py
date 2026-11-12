@@ -1,13 +1,14 @@
-"""CZ CELLxGENE Discover 단일세포 데이터셋 discovery.
+"""CZ CELLxGENE Discover single-cell dataset discovery.
 
-근거 (2026-10-30 확인, chanzuckerberg/single-cell-data-portal backend/curation/api/curation-api.yml):
-- base: https://api.cellxgene.cziscience.com/curation/v1  (공개 GET은 인증 없음, 페이지네이션 없음)
-- GET /collections               : 공개 collection 목록. datasets는 미리보기(assets 없음):
-                                   dataset_id, assay, disease, organism, tissue (각각 [{label, ontology_term_id}])
-- GET /collections/{collection_id}: datasets 전체 메타데이터 + assets[{filetype, url, filesize}]
-  filetype: H5AD, RDS(2024년 말 이후 신규 생성 중단), ATAC_FRAGMENT, ATAC_INDEX. filesize -1 = 미상. 체크섬 없음.
-- 410 = 철회(tombstoned)된 collection
-- asset URL은 dataset_version_id 기준(불변 버전) -> 재현성을 위해 그 URL을 그대로 쓴다.
+Sources (checked 2026-10-30, chanzuckerberg/single-cell-data-portal backend/curation/api/curation-api.yml):
+- base: https://api.cellxgene.cziscience.com/curation/v1  (public GETs need no auth; no pagination)
+- GET /collections               : list of public collections. datasets are previews (no assets):
+                                   dataset_id, assay, disease, organism, tissue (each [{label, ontology_term_id}])
+- GET /collections/{collection_id}: full dataset metadata + assets[{filetype, url, filesize}]
+  filetype: H5AD, RDS (not generated for new versions since late 2024), ATAC_FRAGMENT, ATAC_INDEX.
+  filesize -1 = unknown. No checksums.
+- 410 = withdrawn (tombstoned) collection
+- Asset URLs are keyed by dataset_version_id (immutable version) -> use them as-is for reproducibility.
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ def search(
 ) -> dict[str, Any]:
     types = [t.upper() for t in (asset_types or ["H5AD"])]
     if set(types) - set(ASSET_TYPES):
-        raise ValueError(f"asset_types는 {ASSET_TYPES} 중에서 고르세요.")
+        raise ValueError(f"asset_types must be chosen from {ASSET_TYPES}.")
     crit = {"organism": _as_list(organism), "tissue": _as_list(tissue), "disease": _as_list(disease),
             "assay": _as_list(assay)}
     log = http.ApiLog()
@@ -78,7 +79,7 @@ def search(
             if any(all(_match(_labels(d.get(k)), v) for k, v in crit.items()) for d in c.get("datasets", [])):
                 coll_ids.append(c["collection_id"])
         if len(coll_ids) > max_collections:
-            notes.append(f"조건에 맞는 collection {len(coll_ids)}개 중 {max_collections}개만 상세 조회했습니다. 조건을 좁히세요.")
+            notes.append(f"Fetched {max_collections} of {len(coll_ids)} matching collections. Narrow the criteria.")
             coll_ids = coll_ids[:max_collections]
 
     rows, datasets = [], []
@@ -87,7 +88,7 @@ def search(
             coll = http.request(client, log, "GET", f"{CXG_API}/collections/{cid}", retries=retries).json()
         except http.ApiError as exc:
             if "HTTP 410" in str(exc) or "HTTP 404" in str(exc):
-                notes.append(f"collection {cid}: 철회되었거나 없음")
+                notes.append(f"collection {cid}: withdrawn or not found")
                 continue
             raise
         for d in coll.get("datasets", []):
@@ -122,7 +123,7 @@ def search(
         "by_assay": counts(d["assay"] for d in datasets),
         "by_disease": dict(list(counts(d["disease"] for d in datasets).items())[:15]),
         "asset_types": types,
-        "checksums": "CELLxGENE API는 체크섬을 제공하지 않아 크기로만 검증합니다.",
+        "checksums": "The CELLxGENE API provides no checksums; files are verified by size only.",
     }
     params = {"criteria": crit, "text": text, "collection_id": collection_id, "asset_types": types}
     out = urlfiles.save_url_query(cfg, db, "cellxgene", rows, params, log.calls, extra)
@@ -130,7 +131,8 @@ def search(
         meta_path = write_tsv(cfg.manifests_dir / f"{out['query_id']}.datasets.tsv", datasets, DATASET_COLUMNS)
         out["datasets_path"] = str(meta_path)
         out["datasets_preview"] = datasets[:8]
-    out["notes"] = notes + ["파일 이름은 dataset_version_id(불변 버전)입니다. datasets_path 표로 데이터셋 제목과 연결하세요."]
+    out["notes"] = notes + ["File names are dataset_version_id (immutable version). "
+                            "Use the datasets_path table to map them to dataset titles."]
     if "RDS" in types:
-        out["notes"].append("RDS(Seurat)는 2024년 말 이후 새 버전에서 생성되지 않아 없는 데이터셋이 많습니다.")
+        out["notes"].append("RDS (Seurat) is not generated for new versions since late 2024, so many datasets lack it.")
     return out

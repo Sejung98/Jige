@@ -1,11 +1,11 @@
 {
   "started": "2026-10-30T02:12:36+0000",
   "requests": {
-    "P1": "TCGA-BRCA의 WGS BAM 중 open access인 것 몇 개, 몇 TB인지 알려줘",
-    "P2": "GEO GSE137303의 count matrix(supplementary 파일) 받아줘",
-    "P3": "ENCODE ENCSR356KRQ(ATAC-seq)의 GRCh38 peak(bed) 파일 받아줘",
-    "P4": "SRA run SRR390278의 메타데이터(종, strategy, layout, read 수, FASTQ 크기)",
-    "P5": "Zenodo 레코드 3490058의 파일 받아줘"
+    "P1": "Tell me how many TCGA-BRCA WGS BAMs are open access, and how many TB",
+    "P2": "Download the count matrix (supplementary files) of GEO GSE137303",
+    "P3": "Download the GRCh38 peak files (bed) of ENCODE ENCSR356KRQ (ATAC-seq)",
+    "P4": "Metadata of SRA run SRR390278 (species, strategy, layout, reads, FASTQ size)",
+    "P5": "Download the files of Zenodo record 3490058"
   },
   "team": {
     "P1": {

@@ -1,8 +1,8 @@
-"""크리덴셜 취급 규칙.
+"""Credential handling rules.
 
-- 토큰/크리덴셜 파일은 **경로만** 다루고 내용은 절대 읽지 않는다.
-- 파일 권한이 600(소유자 전용)이 아니면 경고한다.
-- 도구 출력으로 내보내는 로그 꼬리(tail)에서는 토큰처럼 보이는 문자열을 가린다.
+- Token/credential files are handled by **path only**; their contents are never read.
+- Warn if file permissions are not 600 (owner only).
+- Mask token-like strings in log tails returned in tool output.
 """
 
 from __future__ import annotations
@@ -13,30 +13,46 @@ import stat
 from pathlib import Path
 from typing import Any
 
-# GDC 토큰은 수백 자 길이의 base64url 계열 문자열이다. 40자 이상 연속 문자열을 가린다.
+# GDC tokens are base64url-like strings hundreds of characters long. Mask runs of 40+ characters.
 _TOKENISH = re.compile(r"[A-Za-z0-9_\-\.=+/]{40,}")
 _KEYVAL = re.compile(r"(?i)(token|password|passwd|secret|api[_-]?key)(\s*[:=]\s*)(\S+)")
 
 
 def check_secret_file(path: str | os.PathLike | None, label: str) -> dict[str, Any]:
-    """크리덴셜 파일 상태 점검. 내용을 열지 않는다."""
+    """Check a credential file's status. Never opens its contents."""
     if not path:
         return {"label": label, "path": None, "exists": False, "ok": False,
-                "warning": f"{label} 경로가 config에 없습니다."}
+                "warning": f"{label} path is not set in config."}
     p = Path(path)
     if not p.exists():
         return {"label": label, "path": str(p), "exists": False, "ok": False,
-                "warning": f"{label} 파일이 없습니다: {p}"}
+                "warning": f"{label} file not found: {p}"}
     mode = stat.S_IMODE(p.stat().st_mode)
     out: dict[str, Any] = {"label": label, "path": str(p), "exists": True, "mode": oct(mode)}
     if mode & 0o077:
         out["ok"] = False
         out["warning"] = (
-            f"{label} 파일 권한이 {oct(mode)} 입니다. 소유자 전용이어야 합니다: chmod 600 {p}"
+            f"{label} file permissions are {oct(mode)}. It must be owner-only: chmod 600 {p}"
         )
     else:
         out["ok"] = True
     return out
+
+
+# File names that look like credentials (used to block them as input files such as patient lists)
+_SECRET_NAME = re.compile(r"(?i)(token|credential|creds|secret|passw|\.ngc$|\.pem$|\.key$|id_rsa|id_ed25519)")
+_SECRET_DIRS = {".ssh", ".gdc", ".ega", ".aws", ".gnupg"}
+
+
+def is_secret_path(path: str | os.PathLike, secret_paths: list[Path | None]) -> bool:
+    """Whether the path is a credential path from config or looks like one. Never opens the file."""
+    p = Path(os.path.expanduser(str(path))).resolve()
+    for sp in secret_paths:
+        if sp and p == Path(sp).expanduser().resolve():
+            return True
+    if _SECRET_DIRS.intersection(p.parts):
+        return True
+    return bool(_SECRET_NAME.search(p.name))
 
 
 def nearest_existing(path: Path) -> Path:
@@ -47,7 +63,7 @@ def nearest_existing(path: Path) -> Path:
 
 
 def dir_exposure(path: Path) -> dict[str, Any]:
-    """대상 디렉토리(또는 가장 가까운 존재하는 상위)의 group/other 접근 권한."""
+    """group/other access permissions of the target directory (or its nearest existing parent)."""
     p = nearest_existing(path)
     mode = stat.S_IMODE(p.stat().st_mode)
     return {
@@ -58,13 +74,25 @@ def dir_exposure(path: Path) -> dict[str, Any]:
     }
 
 
+# Long file names and paths are normal in job logs (e.g. TCGA BAM names, data_root paths) and must stay
+# readable. Tokens (JWT, base64) never start with "/" and never end in a short file extension.
+_FILE_EXT = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,5}(?:\.(?:gz|bz2|xz|zst))?$")
+
+
+def _mask_tokenish(m: re.Match) -> str:
+    s = m.group(0)
+    if s.startswith("/") or s.startswith("./") or _FILE_EXT.search(s):
+        return s
+    return "***REDACTED***"
+
+
 def redact(text: str) -> str:
     text = _KEYVAL.sub(lambda m: f"{m.group(1)}{m.group(2)}***", text)
-    return _TOKENISH.sub("***REDACTED***", text)
+    return _TOKENISH.sub(_mask_tokenish, text)
 
 
 def script_has_inline_secret(text: str, secret_paths: list[Path]) -> bool:
-    """스크립트에 토큰/비밀번호 값이 직접 들어있는지 검사. 크리덴셜은 파일 경로로만 전달해야 한다."""
+    """Check whether a script contains a token/password value inline. Credentials must be passed only as file paths."""
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("#"):

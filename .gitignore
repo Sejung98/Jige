@@ -1,4 +1,4 @@
-# 로컬 설정과 크리덴셜
+# Local config and credentials
 config.yaml
 *.token
 *token*.txt
@@ -8,7 +8,7 @@ credentials.json
 .gdc/
 .ega/
 
-# 상태·데이터·작업 디렉토리
+# State, data, and work directories
 state/
 data/
 work/
@@ -27,5 +27,5 @@ __pycache__/
 build/
 dist/
 
-# Claude Code 로컬 설정
+# Claude Code local settings
 .claude/settings.local.json

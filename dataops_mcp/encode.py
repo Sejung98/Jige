@@ -1,16 +1,17 @@
-"""ENCODE 포털 discovery (실험 검색, 실험별 파일 목록).
+"""ENCODE portal discovery (experiment search, per-experiment file lists).
 
-근거 (2026-10-30 확인, ENCODE-DCC/encoded·snovault-search 소스):
-- JSON은 format=json을 붙여야 한다(없으면 HTML). 공개(released) 데이터는 인증 없음.
-- GET /search/?type=Experiment&<필드>=<값>&field=...&limit=all&format=json
-  응답: @graph, total. 결과 0건이면 HTTP 404(notification "No results found") -> 빈 결과로 처리.
-  필터 필드: assay_title, biosample_ontology.term_name, target.label, assembly, status,
-  replicates.library.biosample.donor.organism.scientific_name, searchTerm(자유 검색)
-- 실험의 파일: GET /search/?type=File&dataset=/experiments/{ENCSR}/&limit=all&format=json
-  (포털 UI filegallery.js와 같은 방식). 파일 필드: accession, file_format, file_type, output_type, assembly,
-  file_size, md5sum(받는 파일 그대로의 md5), href, status, biological_replicates, restricted, no_file_available
-- 다운로드 URL = https://www.encodeproject.org + href (307 redirect -> 서명된 S3 URL, curl -L로 따라감)
-- 공식 안내: 초당 GET 10회 이하
+Sources (checked 2026-10-30, ENCODE-DCC/encoded and snovault-search source):
+- JSON requires format=json (HTML otherwise). Public (released) data needs no auth.
+- GET /search/?type=Experiment&<field>=<value>&field=...&limit=all&format=json
+  Response: @graph, total. Zero results return HTTP 404 (notification "No results found") -> treated as empty.
+  Filter fields: assay_title, biosample_ontology.term_name, target.label, assembly, status,
+  replicates.library.biosample.donor.organism.scientific_name, searchTerm (free text)
+- Files of an experiment: GET /search/?type=File&dataset=/experiments/{ENCSR}/&limit=all&format=json
+  (same approach as the portal UI filegallery.js). File fields: accession, file_format, file_type, output_type,
+  assembly, file_size, md5sum (md5 of the file as downloaded), href, status, biological_replicates, restricted,
+  no_file_available
+- Download URL = https://www.encodeproject.org + href (307 redirect -> signed S3 URL, followed by curl -L)
+- Official guidance: at most 10 GET requests per second
 """
 
 from __future__ import annotations
@@ -122,7 +123,8 @@ def search(
         "experiments_path": str(exp_path) if exp_path else None,
         "preview": rows[:10],
         "api_queries": log.calls,
-        "next_step": "받을 실험을 정하면 encode_files(experiments=[...] 또는 from_query_id=이 query_id)로 파일을 고르세요.",
+        "next_step": "Once you pick the experiments, choose files with "
+                     "encode_files(experiments=[...] or from_query_id=this query_id).",
     }
 
 
@@ -143,7 +145,7 @@ def files(
     if from_query_id:
         q = db.get_query(from_query_id)
         if q is None or q["source"] != "encode":
-            raise KeyError(f"ENCODE 검색 query_id가 아닙니다: {from_query_id}")
+            raise KeyError(f"Not an ENCODE search query_id: {from_query_id}")
         path = cfg.manifests_dir / f"{from_query_id}.experiments.tsv"
         from .util import read_tsv
 
@@ -151,11 +153,11 @@ def files(
     accs = list(dict.fromkeys(accs))
     bad = [a for a in accs if not EXP_RE.match(a)]
     if bad:
-        raise ValueError(f"ENCODE 실험 accession(ENCSR...) 형식이 아닙니다: {bad[:5]}")
+        raise ValueError(f"Not ENCODE experiment accessions (ENCSR...): {bad[:5]}")
     if not accs:
-        raise ValueError("experiments 또는 from_query_id가 필요합니다.")
+        raise ValueError("experiments or from_query_id is required.")
     if len(accs) > max_experiments:
-        raise ValueError(f"실험 {len(accs)}개는 너무 많습니다(max_experiments={max_experiments}). 조건을 좁히세요.")
+        raise ValueError(f"{len(accs)} experiments exceeds max_experiments={max_experiments}. Narrow the criteria.")
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
     rows, skipped, per = [], 0, []
@@ -191,5 +193,5 @@ def files(
                                                               "preferred_default_only": preferred_default_only},
                                   log.calls, extra)
     if len([a for a in extra["by_assembly"] if a != "NA"]) > 1:
-        out["warning"] = f"여러 assembly가 섞여 있습니다: {extra['by_assembly']}. assembly='GRCh38'처럼 하나로 좁히세요."
+        out["warning"] = f"Mixed assemblies: {extra['by_assembly']}. Narrow to one, e.g. assembly='GRCh38'."
     return out

@@ -1,12 +1,12 @@
-"""Zenodo 레코드 파일 discovery.
+"""Zenodo record file discovery.
 
-근거 (2026-10-30 확인):
+Sources (checked 2026-10-30):
 - GET https://zenodo.org/api/records/{id} (Accept: application/json, Zenodo legacy JSON)
   files[] = {key, size, checksum: "md5:<hex>", links.self: ".../api/records/{id}/files/{key}/content"}
-  출처: zenodo/zenodo-rdm legacy/serializers/schemas/zenodojson.py, zenodo_get 클라이언트
-- DOI 10.5281/zenodo.{N}: N은 버전 레코드 또는 concept 레코드. concept id 요청은 최신 버전으로 redirect된다
-  (invenio-rdm-records resources.py). httpx 클라이언트는 redirect를 따라간다.
-- 게스트 요청 한도는 보수적으로 분당 60회로 본다(developers.zenodo.org rate-limit 문서).
+  Source: zenodo/zenodo-rdm legacy/serializers/schemas/zenodojson.py, zenodo_get client
+- DOI 10.5281/zenodo.{N}: N is either a version record or a concept record. A request for a concept id redirects
+  to the latest version (invenio-rdm-records resources.py). The httpx client follows redirects.
+- The guest rate limit is conservatively taken as 60 requests per minute (developers.zenodo.org rate-limit docs).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def record_id(value: str) -> str:
         m = pat.search(v)
         if m:
             return m.group(1)
-    raise ValueError(f"Zenodo 레코드 번호, 10.5281/zenodo.N DOI 또는 zenodo.org/records/N URL이 아닙니다: {value!r}")
+    raise ValueError(f"Not a Zenodo record number, 10.5281/zenodo.N DOI, or zenodo.org/records/N URL: {value!r}")
 
 
 def files(
@@ -49,7 +49,7 @@ def files(
     rid = record_id(record)
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
-    # concept id는 최신 버전으로 redirect된다(클라이언트가 redirect를 따라감)
+    # a concept id redirects to the latest version (the client follows redirects)
     rec = http.request(client, log, "GET", f"{ZENODO_API}/{rid}", headers={"Accept": "application/json"},
                        retries=retries).json()
     meta = rec.get("metadata") or {}
@@ -76,5 +76,5 @@ def files(
     out = urlfiles.save_url_query(cfg, db, "zenodo", rows, {"record": record, "include": include,
                                                               "exclude": exclude}, log.calls, extra)
     if not rec.get("files"):
-        out["hint"] = "파일이 없습니다. 접근 제한(restricted) 레코드이거나 메타데이터만 있는 레코드일 수 있습니다."
+        out["hint"] = "No files. The record may be restricted or metadata-only."
     return out

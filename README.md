@@ -2,9 +2,27 @@
 
 # Jige: Genomics DataOps Team
 
-**Ask in plain language. It finds public biological datasets, downloads them as verified jobs on your own HPC, and prepares nf-core pipelines — with every number traced to a live API call and nothing executed without your approval.**
+[![tests](https://github.com/Sejung98/Jige/actions/workflows/tests.yml/badge.svg)](https://github.com/Sejung98/Jige/actions/workflows/tests.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**Ask in plain language. Jige finds public biological datasets, downloads them as verified jobs on your own HPC, and prepares nf-core pipelines. Every number comes from a live API call, and nothing runs without your approval.**
 
 [한국어 README](README.ko.md)
+
+## Quick start
+
+On a Linux HPC login node with Python ≥ 3.10, `curl` and [Claude Code](https://code.claude.com/docs) (Claude subscription or API key):
+
+```bash
+git clone https://github.com/Sejung98/Jige.git
+cd Jige && ./install.sh          # creates .venv, installs Python deps, copies config.example.yaml to config.yaml
+vi config.yaml                   # scheduler, partition, data paths (see "Configuration" below)
+claude                           # start Claude Code in this folder; trust it and allow the dataops MCP server
+```
+
+Then ask, for example: *"How many TCGA-BRCA WGS BAMs are open access, and how many TB?"*
+
+Download and pipeline jobs also need `gdc-client`, `pyega3` and Nextflow ≥ 25.10.4 (with Java 17+), plus Singularity/Apptainer from your site. `conda env create -f environment.yml` installs a tested set of the first three.
 
 ## Databases it can fetch from
 
@@ -32,80 +50,47 @@
 Plus any public HTTPS file you point it at (Ensembl/GENCODE references, gnomAD, 1000 Genomes, …) through `url_inspect`.
 <sub>Logos are trademarks of their owners, shown only to identify supported resources ([sources](docs/logos/SOURCES.md)).</sub>
 
----
+## What a request looks like
 
-## What it is for
-
-Re-analysing public data usually means a day of glue work before any science: clicking through portals, translating a GEO series into SRA runs, writing manifests and `sbatch` scripts, discovering that compute nodes have no internet, hand-writing samplesheets, and finding out three days later that the reference genome did not match.
-
-This repository turns that work into a **DataOps team that runs inside [Claude Code](https://code.claude.com/docs) on your lab's HPC**:
+Abridged. The numbers are from the [benchmark run](benchmarks/REPORT.md) on 2026-10-30.
 
 ```
-"Get the RNA-seq of PRJNA… and run nf-core/rnaseq"
-   → discovery agent queries the live API (counts, sizes, layout, species — with the exact query it used)
-   → you confirm → transfer agent writes a download job → peer reviewer checks it → you approve → Slurm/PBS runs it
-   → download verified against the manifest → processing agent writes the samplesheet and a version-pinned
-     nextflow job → reviewed → approved → submitted → status on request
+You:  How many TCGA-BRCA WGS BAMs are open access, and how many TB?
+Jige: gdc-discovery → gdc_search_files(project="TCGA-BRCA", experimental_strategy="WGS", data_format="BAM")
+      open: 0 files · controlled: 2,106 files, 536.67 TB, 952 cases
+      + query_id and the exact POST https://api.gdc.cancer.gov/files filter. Nothing is downloaded.
+
+You:  Download the GRCh38 peak files of ENCODE ENCSR356KRQ.
+Jige: encode-discovery → 12 bed files, 95.87 MB, all with md5 → manifest
+      transfer → curl job script → peer-reviewer: PASS → "Submit this job?"
+You:  go ahead
+Jige: submit_job(confirm=True) → job finished → verify_download: 12/12 files, md5 12/12 PASS
 ```
 
 The language model only plans and fills in parameters. Downloads and computation are done by established tools (gdc-client, nf-core/fetchngs, pyega3, curl, nf-core pipelines) as scheduler jobs.
 
-### What changes for you
+## Why not just ask a chat LLM?
 
-| Step | By hand today | With the team |
+On the same five small requests, Jige was compared with a plain chat LLM (same model, no tools) ([report](benchmarks/REPORT.md)):
+
+- Jige answered all five from live APIs, with file names, sizes and checksums. The plain LLM got one number right and gave no file-level facts.
+- The plain LLM's download commands, run exactly as written, fetched the intended files in 1 of 4 cases. One saved a 404 page under a `.bed.gz` name without an error, one fetched only `robots.txt` and exited 0, and one assumed paired-end file names that did not exist. Jige downloaded all three requested datasets and verified them (sizes, plus md5 where the archive provides it).
+- The plain LLM "corrected" a real accession (SRR390278) into a different, well-known one. Jige looked it up first.
+
+## What changes for you
+
+| Step | By hand today | With Jige |
 |---|---|---|
-| Find data | Portal filters, GEO→SRA mapping, adding up file sizes | Ask "how many open WGS BAMs in TCGA-BRCA, how many TB?" — answer comes from the API, with the query shown |
-| Download | Manifests, client flags, `sbatch` scripts; stuck when compute nodes are offline | Job script generated and routed to a node that has internet (compute / transfer partition / login node) |
-| Check | Missing files, truncated files, md5 by hand | Manifest comparison, size and md5/sha checks, resumable re-runs |
+| Find data | Portal filters, GEO→SRA mapping, adding up file sizes | Ask; the answer comes from the API, with the query shown |
+| Download | Manifests, client flags, `sbatch` scripts; stuck when compute nodes are offline | Job script generated and routed to a node with internet (compute / transfer partition / login node) |
+| Check | Missing or truncated files, md5 by hand | Manifest comparison, size and md5/sha checks, resumable re-runs |
 | Samplesheet | Hundreds of CSV rows, paired/single mistakes | Generated in the nf-core/rnaseq or sarek schema |
 | Run pipeline | Version, reference, profile, work dir, `-resume` every time | Version-pinned script with a site config |
 | Catch mistakes | Usually days later | Before submission: species/reference mismatch, lost mates, disk space, controlled-data handling |
 | Provenance | "Which version did I download?" | Every query, script hash, review and job stored in SQLite |
 | Monitoring | `squeue` and log digging | "How are yesterday's jobs?" → status and error summary |
 
-What it does **not** do: downstream statistics or biological interpretation, apply for DAC/dbGaP access for you, or provide compute.
-
----
-
-## Supported databases in detail
-
-| Database | What you get | Access | Downloaded with | Subagent |
-|---|---|---|---|---|
-| NCI GDC | Aligned reads (BAM), variants (VCF/MAF), expression counts, methylation, CNV, clinical | open + controlled (dbGaP) | gdc-client | `gdc-discovery` |
-| SRA / ENA / DDBJ | FASTQ per run, any organism or assay | open | nf-core/fetchngs | `sra-discovery` |
-| NCBI GEO → SRA | Raw reads behind a GSE/GSM | open | nf-core/fetchngs | `sra-discovery` |
-| dbGaP (via SRA) | Protected human runs | controlled | fetchngs `--dbgap_key` (.ngc, SRA Toolkit) | `sra-discovery` |
-| EGA | BAM/CRAM/VCF/FASTQ per dataset | controlled | pyega3 | `ega-discovery` |
-| NCBI GEO (files) | Supplementary files, series matrix (count matrices, microarray, RAW.tar) | open | curl manifest | `study-files-discovery` |
-| ArrayExpress | Processed data, MAGE-TAB (raw reads link to ENA) | open | curl manifest | `study-files-discovery` |
-| ENCODE | Peaks, signal tracks, alignments, FASTQ | open | curl manifest (md5) | `encode-discovery` |
-| CZ CELLxGENE | Curated single-cell AnnData (.h5ad) | open | curl manifest | `singlecell-discovery` |
-| cBioPortal | Mutations, CNA, expression, clinical per study | open | curl manifest (study tarball) | `cbioportal-discovery` |
-| PRIDE | Raw spectra, search results | open | curl manifest (md5) | `study-files-discovery` |
-| Zenodo | Anything deposited with a DOI | open | curl manifest (md5) | `study-files-discovery` |
-| Direct URLs | References, gnomAD, 1000 Genomes, … | open | curl manifest | `study-files-discovery` |
-
-`list_databases` returns this catalog to the agent at runtime, including what is *not* supported and why.
-
-## Is this enough for public data?
-
-For sequencing-centred genomics the set covers the main public routes: every raw-read archive (the three INSDC members mirror each other), the two large controlled-access human archives plus dbGaP-protected SRA data, the main cancer, functional, regulatory and single-cell resources, and the places where papers leave processed files.
-
-| Kind of data | Covered by | Not covered (yet) |
-|---|---|---|
-| Raw sequencing reads | SRA, ENA, DDBJ, GEO→SRA | China NGDC GSA (public files can go through `url_inspect`) |
-| Controlled human genomes | GDC controlled, EGA, dbGaP-protected SRA | UK Biobank, All of Us, AnVIL/Terra (analysis happens in cloud enclaves), JGA |
-| Cancer genomics | GDC (raw and harmonised), cBioPortal (processed) | ICGC: the data portal closed in June 2024; legacy raw data is mostly at EGA |
-| Expression / functional genomics | GEO files, ArrayExpress | Expression Atlas, Single Cell Expression Atlas (dedicated modules) |
-| Regulatory genomics | ENCODE | Roadmap, 4DN, IGVF (dedicated modules) |
-| Single cell | CELLxGENE | HCA Data Portal, Broad Single Cell Portal |
-| Proteomics | PRIDE | MassIVE, jPOST |
-| References and population variation | `url_inspect` (Ensembl, GENCODE, UCSC, gnomAD, 1000 Genomes) | — |
-| Metabolomics, imaging | — | MetaboLights, Metabolomics Workbench, TCIA, IDR |
-
-New sources are cheap to add: a discovery module only has to produce a URL manifest (`url, filename, size, checksum`). Download, verification, review and submission are shared.
-
----
+Not in scope: downstream statistics or biological interpretation, applying for DAC/dbGaP access, or providing compute.
 
 ## How it works
 
@@ -140,28 +125,16 @@ flowchart TB
 | Principle | How it is enforced |
 |---|---|
 | Separate roles | Each subagent's `tools` list only contains its own MCP tools. Discovery agents cannot download; transfer and processing agents cannot submit; the reviewer is read-only apart from recording its verdict. |
-| Grounded answers | Every discovery result carries a `query_id` and the exact API calls (`api_queries`) it came from, stored in SQLite. Agents are told to report numbers only from tool results. |
-| Reasoning ≠ execution | Scripts come from tested Jinja2 templates. Direct `sbatch`, `qsub`, `nextflow run`, `gdc-client`, `pyega3` from the shell are denied in `.claude/settings.json` (a backstop; the server checks below are the real guard). |
-| Approval before execution | `submit_job` defaults to `dry_run=True`. A real submission needs `confirm=True`, `dry_run=False`, a peer-review PASS that matches the **sha256 of the script and all its inputs**, and a free slot under `max_concurrent_jobs`. Claude Code also asks you on every `submit_job` call (`ask` rule plus the tool's `anthropic/requiresUserInteraction` flag). |
-| Controlled data | Requires an explicit acknowledgement (DAC approval, institutional rules, storage location); tokens and keys are passed as paths and never read; files must be mode 600; scripts use `umask 077`; log output is redacted. |
+| Grounded answers | Every discovery result carries a `query_id` and the exact API calls (`api_queries`) it came from, stored in SQLite. Agents report numbers only from tool results. |
+| Reasoning ≠ execution | Scripts come from tested Jinja2 templates. `.claude/settings.json` denies Claude's shell from running `sbatch`, `qsub`, `srun`, `salloc`, `nextflow run`, `gdc-client` or `pyega3` and from reading credential files. This is a backstop that applies only to Claude sessions started in this folder; the server checks below are the real guard. |
+| Approval before execution | `submit_job` defaults to `dry_run=True`. A real submission needs `confirm=True`, `dry_run=False`, a peer-review PASS that matches the **sha256 of the script and all its inputs**, and a free slot under `max_concurrent_jobs`. Claude Code also asks you on every `submit_job` call. |
+| Controlled data | Requires an explicit acknowledgement (DAC approval, institutional rules, storage location). Tokens and keys are passed as paths and never read; files must be mode 600; scripts use `umask 077`; log output is redacted. |
 
 The automatic review (`preflight_check`) catches, among others: input species ≠ reference species; an aligned BAM's assembly ≠ the pipeline reference (e.g. GDC's GRCh38.d1.vd1 vs sarek's default GATK.GRCh38); paired-end metadata with a missing mate; sarek tools that need `sex` while it is `NA`; not enough disk; unpinned pipeline versions; iGenomes references on offline compute nodes; scripts or inputs edited after generation.
 
----
+## Configuration
 
-## Install
-
-Requirements: Linux HPC login node, Python ≥ 3.10, [Claude Code](https://code.claude.com/docs), `curl`; for pipelines Java 17+, Nextflow ≥ 25.10.4 and Singularity/Apptainer.
-
-```bash
-git clone -b claude/genomics-dataops-team https://github.com/Sejung98/Jige.git genomics-dataops-team
-cd genomics-dataops-team && ./install.sh        # PYTHON=python3.11 ./install.sh, or --run-tests
-vi config.yaml && claude                         # start claude in the repository root
-```
-
-`install.sh` creates `.venv`, installs the dependencies (`mcp`, `httpx`, `pyyaml`, `jinja2`, `pytest`, `respx`), copies `config.example.yaml` to `config.yaml`, checks that the MCP server starts, and reports which external tools are missing (it never installs them). On first launch, accept the folder-trust prompt and the `dataops` MCP server.
-
-### What to fill in `config.yaml`
+`install.sh` creates `.venv`, installs `mcp`, `httpx`, `pyyaml`, `jinja2`, `pytest` and `respx`, copies `config.example.yaml` to `config.yaml` (mode 600), checks that the MCP server starts, and reports which external tools are missing (it never installs them). Keys to fill in:
 
 | Key | Meaning |
 |---|---|
@@ -172,34 +145,71 @@ vi config.yaml && claude                         # start claude in the repositor
 | `container` | `singularity`, `apptainer` or `docker` |
 | `data_root`, `work_dir`, `singularity_cache` | Large-storage paths |
 | `gdc_token_path`, `ega_credentials_path`, `dbgap_key_path` | Credential **paths** for controlled data (`chmod 600`) |
+| `tools`, `module_loads` | Paths to gdc-client/pyega3/nextflow and setup commands if they are not on `PATH` inside jobs |
 | `references` | Local fasta/gtf with `assembly` and `species` (required if compute nodes are offline) |
 
-Check compute-node internet with `srun --pty curl -sI https://api.gdc.cancer.gov/status`.
+Check compute-node internet with `srun --pty curl -sI https://api.gdc.cancer.gov/status`. For heavy SRA/GEO use, export `NCBI_API_KEY` before starting `claude`: NCBI allows 10 requests/s with a key and 3 without, and Jige spaces its requests to match.
 
----
-
-## Examples
-
-**"How many open-access WGS BAMs does TCGA-BRCA have, and how many TB?"** — `gdc-discovery` checks field spellings with `gdc_get_field_values`, runs `gdc_search_files(project, experimental_strategy, data_format, access)` and reports counts, size and the exact filter it used. Nothing is downloaded. (In GDC most raw sequence files are controlled access, so the open count may well be zero; the agent then shows the open/controlled split.)
-
-**"Download the RNA-seq of PRJNA… and run nf-core/rnaseq"** — `sra-discovery` (`sra_search`, library strategy, layout, species, size) → you confirm → `transfer` (`prepare_download` → nf-core/fetchngs job) → `peer-reviewer` → your approval → `submit_job` → later `verify_download` → `processing` (`build_samplesheet`, `prepare_pipeline` with a local reference) → review → approval → submission.
-
-**"What happened to the jobs I submitted yesterday?"** — the Orchestrator calls `list_jobs(since_hours=48)` and `job_status`, and summarises states and log errors.
-
-More:
+## More examples
 
 | Request | Route |
 |---|---|
+| "Download the RNA-seq of PRJNA… and run nf-core/rnaseq" | `sra_search` → you confirm → fetchngs job → review → approval → submit → `verify_download` → `build_samplesheet` + `prepare_pipeline` → review → approval → submit |
 | "Get the count matrix from GSE…" | `geo_files` → curl job (size-checked; GEO has no checksums) |
 | "ENCODE CTCF ChIP-seq peaks in K562, GRCh38" | `encode_search` → `encode_files(assembly="GRCh38", output_type=…)` → curl job with md5 |
 | "Single-cell lung datasets with COVID-19" | `cellxgene_search(tissue="lung", disease="COVID-19")` → h5ad manifest |
+| "WGS BAMs for the patients in this list" (TCGA barcodes or GDC case UUIDs) | `gdc_search_files(..., case_file=…)` → one manifest per patient batch; `summary.case_filter` lists patients with no matching files |
 | "TCGA breast cancer mutation and clinical tables" | `cbioportal_search(keyword="breast")` → study tarballs, hg19/hg38 flagged |
 | "Files of PXD…" / "data of 10.5281/zenodo.…" | `pride_files` / `zenodo_files` → curl job with md5 |
 | "We have dbGaP approval for phs…" | `sra_search` flags protected runs → `prepare_download(use_dbgap=True)` with your `.ngc` key |
+| "What happened to the jobs I submitted yesterday?" | `list_jobs(since_hours=48)` + `job_status` → states and log errors |
 
----
+<details>
+<summary><b>Supported databases in detail</b></summary>
 
-## MCP tools (27)
+| Database | What you get | Access | Downloaded with | Subagent |
+|---|---|---|---|---|
+| NCI GDC | Aligned reads (BAM), variants (VCF/MAF), expression counts, methylation, CNV, clinical | open + controlled (dbGaP) | gdc-client | `gdc-discovery` |
+| SRA / ENA / DDBJ | FASTQ per run, any organism or assay | open | nf-core/fetchngs | `sra-discovery` |
+| NCBI GEO → SRA | Raw reads behind a GSE/GSM | open | nf-core/fetchngs | `sra-discovery` |
+| dbGaP (via SRA) | Protected human runs | controlled | fetchngs `--dbgap_key` (.ngc, SRA Toolkit) | `sra-discovery` |
+| EGA | BAM/CRAM/VCF/FASTQ per dataset | controlled | pyega3 | `ega-discovery` |
+| NCBI GEO (files) | Supplementary files, series matrix (count matrices, microarray, RAW.tar) | open | curl manifest | `study-files-discovery` |
+| ArrayExpress | Processed data, MAGE-TAB (raw reads link to ENA) | open | curl manifest | `study-files-discovery` |
+| ENCODE | Peaks, signal tracks, alignments, FASTQ | open | curl manifest (md5) | `encode-discovery` |
+| CZ CELLxGENE | Curated single-cell AnnData (.h5ad) | open | curl manifest | `singlecell-discovery` |
+| cBioPortal | Mutations, CNA, expression, clinical per study | open | curl manifest (study tarball) | `cbioportal-discovery` |
+| PRIDE | Raw spectra, search results | open | curl manifest (md5) | `study-files-discovery` |
+| Zenodo | Anything deposited with a DOI | open | curl manifest (md5) | `study-files-discovery` |
+| Direct URLs | References, gnomAD, 1000 Genomes, … | open | curl manifest | `study-files-discovery` |
+
+`list_databases` returns this catalog to the agent at runtime, including what is *not* supported and why.
+
+</details>
+
+<details>
+<summary><b>Is this enough for public data?</b></summary>
+
+For sequencing-centred genomics the set covers the main public routes: every raw-read archive (the three INSDC members mirror each other), the two large controlled-access human archives plus dbGaP-protected SRA data, the main cancer, functional, regulatory and single-cell resources, and the places where papers leave processed files.
+
+| Kind of data | Covered by | Not covered (yet) |
+|---|---|---|
+| Raw sequencing reads | SRA, ENA, DDBJ, GEO→SRA | China NGDC GSA (public files can go through `url_inspect`) |
+| Controlled human genomes | GDC controlled, EGA, dbGaP-protected SRA | UK Biobank, All of Us, AnVIL/Terra (analysis happens in cloud enclaves), JGA |
+| Cancer genomics | GDC (raw and harmonised), cBioPortal (processed) | ICGC: the data portal closed in June 2024; legacy raw data is mostly at EGA |
+| Expression / functional genomics | GEO files, ArrayExpress | Expression Atlas, Single Cell Expression Atlas |
+| Regulatory genomics | ENCODE | Roadmap, 4DN, IGVF |
+| Single cell | CELLxGENE | HCA Data Portal, Broad Single Cell Portal |
+| Proteomics | PRIDE | MassIVE, jPOST |
+| References and population variation | `url_inspect` (Ensembl, GENCODE, UCSC, gnomAD, 1000 Genomes) | — |
+| Metabolomics, imaging | — | MetaboLights, Metabolomics Workbench, TCIA, IDR |
+
+New sources are cheap to add: a discovery module only has to produce a URL manifest (`url, filename, size, checksum`). Download, verification, review and submission are shared.
+
+</details>
+
+<details>
+<summary><b>MCP tools (27)</b></summary>
 
 | Group | Tools |
 |---|---|
@@ -215,6 +225,8 @@ More:
 | Review | `preflight_check`, `record_review` |
 | Execution | `submit_job`, `job_status`, `list_jobs` |
 
+</details>
+
 ## Tests
 
 ```bash
@@ -222,19 +234,19 @@ More:
 .venv/bin/python -m pytest -m live -s    # smoke tests against the real APIs (needs internet)
 ```
 
-The unit tests include the safety rules (dry run by default, refusal without `confirm`, without review, after edits, outside the scripts folder, above the concurrency limit) and an end-to-end run of the generated curl download job against a local HTTP server.
+The unit tests run on every push (Python 3.10 and 3.12). They cover the safety rules (dry run by default, refusal without `confirm`, without review, after edits, outside the scripts folder, above the concurrency limit) and an end-to-end run of the generated curl download job against a local HTTP server. On 2026-11-12 all 14 live tests passed, and a download job went end to end on a Slurm cluster (submit → COMPLETED → md5 PASS).
 
 ## Limitations
 
 - **Controlled data needs DAC approval and must follow your institution's rules.** The tool records your acknowledgement and checks permissions, but cannot verify the scope of an approval.
-- The API clients were built from official documentation and official client source code; at build time the development sandbox could not reach the APIs. Run `pytest -m live -s` once on your server.
+- Download jobs have run end to end with Slurm and with the local runner. Generated nf-core pipeline jobs are unit-tested and reviewed but have not yet been run end to end through Jige. PBS support targets PBS Pro/OpenPBS syntax and has not been run on a real PBS cluster.
 - GDC RNA-seq is distributed as aligned BAM and STAR counts, not FASTQ; nf-core/sarek FASTQ input must be paired-end.
 - Offline compute nodes need the `prefetch` commands returned by `prepare_pipeline` (pipeline, plugins, containers) and local references.
 - dbGaP downloads use a repository key (`.ngc`); JWT carts only work on AWS/GCP.
-- Disk estimates are heuristics; quotas may differ from `df`. Keep `state_dir` off NFS/Lustre if possible (SQLite locking).
-- PBS support targets PBS Pro/OpenPBS syntax.
+- Disk estimates are heuristics; quotas may differ from `df`. Keep `state_dir` on a filesystem with working `flock` (SQLite locking).
 
-## References
+<details>
+<summary><b>References</b></summary>
 
 Resources and tools (verified in PubMed):
 
@@ -260,6 +272,8 @@ Resources and tools (verified in PubMed):
 
 API documentation and client source code used for the implementation are cited at the top of each module in `dataops_mcp/` (GDC API docs, ENA Portal API, NCBI E-utilities, EGA metadata API, BioStudies API via the Bioconductor ArrayExpress package, ENCODE `encoded` schemas, CELLxGENE curation API spec, cBioPortal OpenAPI, PRIDE `pridepy`, Zenodo `zenodo-rdm`, nf-core pipeline schemas).
 
+</details>
+
 ## License
 
-MIT. See [LICENSE](LICENSE). Database logos in `docs/logos/` belong to their respective owners.
+MIT. See [LICENSE](LICENSE). Database logos in `docs/logos/` belong to their respective owners. Changes are listed in [CHANGELOG.md](CHANGELOG.md).

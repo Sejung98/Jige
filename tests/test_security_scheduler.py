@@ -26,6 +26,21 @@ def test_redact_hides_token_like_strings():
     assert token not in out and "token=***" in out
 
 
+def test_redact_keeps_long_file_names_and_paths():
+    bam = "TCGA-A2-A04P-01A-31D-A128-09_Illumina_gdc_realn.bam"
+    pdf = "Poster-Efficiently-starting-institutional-RDM.pdf"  # was masked in the 2026-10-30 benchmark
+    path = "/scratch/project/public_data/gdc/0123456789abcdef0123456789abcdef"
+    line = f"[ok] {bam} {pdf} {path}"
+    assert security.redact(line) == line
+
+
+def test_redact_still_hides_jwt_and_base64():
+    jwt = "eyJhbGciOiJIUzI1NiJ9." + "b" * 60 + "." + "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+    b64 = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo/+abcdefghijklmnopqrstuvwxyz0123456789=="
+    out = security.redact(f"{jwt} {b64}")
+    assert jwt not in out and b64 not in out and out.count("***REDACTED***") == 2
+
+
 def test_inline_secret_detection(tmp_path):
     path = tmp_path / "tok"
     assert security.script_has_inline_secret(f"gdc-client download --token-file {path}", [path]) is False

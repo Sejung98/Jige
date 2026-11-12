@@ -1,16 +1,17 @@
-"""SRA/ENA/DDBJ(+GEO) run 단위 메타데이터 discovery.
+"""Run-level metadata discovery for SRA/ENA/DDBJ (+GEO).
 
-근거:
-- ENA Portal API filereport (result=read_run, fields=...; 기본 응답 TSV):
+Sources:
+- ENA Portal API filereport (result=read_run, fields=...; default response is TSV):
   https://ena-docs.readthedocs.io/en/latest/retrieval/programmatic-access/file-reports.html
-  사용 가능한 필드 목록: https://www.ebi.ac.uk/ena/portal/api/returnFields?dataPortal=ena&result=read_run
+  Available fields: https://www.ebi.ac.uk/ena/portal/api/returnFields?dataPortal=ena&result=read_run
 - NCBI E-utilities (esearch/esummary/efetch rettype=runinfo):
   https://www.ncbi.nlm.nih.gov/books/NBK25499/
-- GEO(GSE/GSM) -> SRA 해석 절차는 nf-core/fetchngs bin/sra_ids_to_runinfo.py 와 같은 방식
+- GEO(GSE/GSM) -> SRA resolution follows the same approach as nf-core/fetchngs bin/sra_ids_to_runinfo.py
   (gds esearch -> esummary samples(GSM) -> sra esearch -> efetch runinfo).
 
-INSDC(SRA·ENA·DDBJ)는 데이터를 상호 미러링하므로 SRA accession도 ENA filereport로 조회된다.
-ENA에 아직 반영되지 않은 run은 NCBI runinfo로 보조 조회하고 그 사실을 결과에 표시한다.
+INSDC (SRA, ENA, DDBJ) members mirror each other's data, so SRA accessions can also be looked up
+with ENA filereport. Runs not yet in ENA are looked up via NCBI runinfo as a fallback, and the
+result notes this.
 """
 
 from __future__ import annotations
@@ -69,13 +70,13 @@ def classify(accession: str) -> str:
     if INSDC_RE.match(acc):
         return "insdc"
     raise ValueError(
-        f"지원하지 않는 accession 형식: {accession!r}. "
-        "PRJNA/PRJEB/PRJDB, SRP/ERP/DRP, SRX/SRR/SRS, SAMN/SAMEA, GSE/GSM 형식을 사용하세요."
+        f"Unsupported accession format: {accession!r}. "
+        "Use PRJNA/PRJEB/PRJDB, SRP/ERP/DRP, SRX/SRR/SRS, SAMN/SAMEA, or GSE/GSM accessions."
     )
 
 
 def _eutils_params(cfg: Config, **extra: Any) -> dict[str, Any]:
-    params: dict[str, Any] = {"tool": "genomics-dataops-team"}
+    params: dict[str, Any] = {"tool": "jige"}
     httpcfg = cfg.get("http", {})
     if httpcfg.get("contact_email"):
         params["email"] = httpcfg["contact_email"]
@@ -104,7 +105,7 @@ def ena_filereport(client: httpx.Client, log: http.ApiLog, accession: str, retri
 def _ncbi_runinfo(
     cfg: Config, client: httpx.Client, log: http.ApiLog, term: str, retries: int
 ) -> list[dict[str, str]]:
-    """NCBI SRA esearch -> efetch(rettype=runinfo). CSV 행 목록."""
+    """NCBI SRA esearch -> efetch(rettype=runinfo). Returns a list of CSV rows."""
     es = http.request(
         client, log, "GET", f"{EUTILS}/esearch.fcgi",
         params=_eutils_params(cfg, db="sra", term=term, retmode="json", retmax=10000), retries=retries,
@@ -128,7 +129,7 @@ def _ncbi_runinfo(
 def resolve_geo(
     cfg: Config, client: httpx.Client, log: http.ApiLog, accession: str, retries: int
 ) -> tuple[list[str], set[str]]:
-    """GSE/GSM -> (ENA로 조회할 study accession 목록, 해당 GEO에 속한 run 집합)."""
+    """GSE/GSM -> (study accessions to query in ENA, set of runs belonging to that GEO record)."""
     acc = accession.upper()
     gsms: list[str]
     if acc.startswith("GSM"):
@@ -140,7 +141,7 @@ def resolve_geo(
         ).json()
         uids = es.get("esearchresult", {}).get("idlist", [])
         if not uids:
-            raise ValueError(f"GEO에서 {acc}를 찾지 못했습니다.")
+            raise ValueError(f"{acc} not found in GEO.")
         summ = http.request(
             client, log, "GET", f"{EUTILS}/esummary.fcgi",
             params=_eutils_params(cfg, db="gds", id=",".join(uids), retmode="json"), retries=retries,
@@ -152,7 +153,7 @@ def resolve_geo(
             if str(rec.get("accession", "")).upper() == acc:
                 gsms.extend(s.get("accession") for s in rec.get("samples", []) if s.get("accession"))
         if not gsms:
-            raise ValueError(f"{acc}에 연결된 GSM 샘플이 없습니다(마이크로어레이 전용 시리즈일 수 있음).")
+            raise ValueError(f"{acc} has no linked GSM samples (it may be a microarray-only series).")
     runinfo: list[dict[str, str]] = []
     for i in range(0, len(gsms), 100):
         term = " OR ".join(f"{g}" for g in gsms[i:i + 100])
@@ -160,7 +161,7 @@ def resolve_geo(
     runs = {r["Run"] for r in runinfo}
     studies = sorted({r.get("SRAStudy") or r.get("BioProject") for r in runinfo if r.get("SRAStudy") or r.get("BioProject")})
     if not runs:
-        raise ValueError(f"{acc}의 GSM에 연결된 SRA run이 없습니다.")
+        raise ValueError(f"No SRA runs are linked to the GSMs of {acc}.")
     return studies, runs
 
 
@@ -189,7 +190,7 @@ def _from_ncbi_row(r: dict[str, str]) -> dict[str, str]:
         "fastq_bytes": "",
         "fastq_md5": "",
         "metadata_source": "ncbi_runinfo",
-        # dbGaP 보호 run 표시: Consent가 'public'이 아니거나 dbgap_study_accession이 있음
+        # dbGaP-protected run flag: Consent is not 'public', or dbgap_study_accession is set
         "consent": r.get("Consent", ""),
         "dbgap_study_accession": r.get("dbgap_study_accession", ""),
     }
@@ -222,7 +223,7 @@ def search(
 ) -> dict[str, Any]:
     accessions = [a for a in re.split(r"[\s,]+", accession.strip()) if a]
     if not accessions:
-        raise ValueError("accession이 비어 있습니다.")
+        raise ValueError("accession is empty.")
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
     rows: dict[str, dict[str, str]] = {}
@@ -231,7 +232,7 @@ def search(
         kind = classify(acc)
         if kind == "geo":
             studies, runs = resolve_geo(cfg, client, log, acc, retries)
-            notes.append(f"{acc} -> SRA study {', '.join(studies)} ({len(runs)} runs, NCBI E-utilities로 해석)")
+            notes.append(f"{acc} -> SRA study {', '.join(studies)} ({len(runs)} runs, resolved via NCBI E-utilities)")
             for study in studies:
                 for r in ena_filereport(client, log, study, retries):
                     if r.get("run_accession") in runs:
@@ -239,7 +240,7 @@ def search(
                         rows[r["run_accession"]] = r
             missing = runs - set(rows)
             if missing:
-                notes.append(f"{len(missing)}개 run이 ENA에 없어 NCBI runinfo로 보조 조회했습니다.")
+                notes.append(f"{len(missing)} run(s) not in ENA; looked up via NCBI runinfo as a fallback.")
                 for r in _ncbi_runinfo(cfg, client, log, " OR ".join(sorted(missing)[:500]), retries):
                     rows.setdefault(r["Run"], _from_ncbi_row(r))
         else:
@@ -250,7 +251,7 @@ def search(
             if not found:
                 fallback = _ncbi_runinfo(cfg, client, log, acc.upper(), retries)
                 if fallback:
-                    notes.append(f"{acc}: ENA 결과가 없어 NCBI runinfo로 조회했습니다(FASTQ URL/md5 없음).")
+                    notes.append(f"{acc}: no ENA results; looked up via NCBI runinfo (no FASTQ URL/md5).")
                 for r in fallback:
                     rows.setdefault(r["Run"], _from_ncbi_row(r))
 
@@ -258,7 +259,7 @@ def search(
     if library_strategy:
         wanted = library_strategy.lower()
         selected = [r for r in all_rows if (r.get("library_strategy") or "").lower() == wanted]
-        notes.append(f"library_strategy={library_strategy} 필터: {len(all_rows)} -> {len(selected)} runs")
+        notes.append(f"library_strategy={library_strategy} filter: {len(all_rows)} -> {len(selected)} runs")
     else:
         selected = all_rows
     truncated = len(selected) > max_runs
@@ -310,14 +311,15 @@ def search(
     }
     if protected:
         result["dbgap"] = (
-            f"{len(protected)}개 run이 dbGaP 보호 데이터입니다({', '.join(summary['dbgap_studies']) or 'study 미상'}). "
-            "해당 study의 dbGaP 승인과 repository key(.ngc)가 있어야 하며, prepare_download(use_dbgap=True)로 받습니다."
+            f"{len(protected)} run(s) are dbGaP-protected data ({', '.join(summary['dbgap_studies']) or 'study unknown'}). "
+            "Downloading requires dbGaP approval for the study and a repository key (.ngc); "
+            "use prepare_download(use_dbgap=True)."
         )
     if no_fastq:
         result["warning"] = (
-            f"{len(no_fastq)}개 run에 ENA FASTQ URL이 없습니다(예: {', '.join(no_fastq[:5])}). "
-            "dbGaP 보호 데이터이거나 아직 미러링되지 않았을 수 있습니다."
+            f"{len(no_fastq)} run(s) have no ENA FASTQ URL (e.g. {', '.join(no_fastq[:5])}). "
+            "They may be dbGaP-protected or not yet mirrored."
         )
     if not selected:
-        result["hint"] = "run이 0개입니다. accession 철자 또는 library_strategy 값(예: RNA-Seq, WGS)을 확인하세요."
+        result["hint"] = "0 runs found. Check the accession spelling or the library_strategy value (e.g. RNA-Seq, WGS)."
     return result

@@ -1,4 +1,5 @@
-"""ENCODE, CELLxGENE, cBioPortal. 응답 형태는 각 프로젝트 공식 소스(스키마·OpenAPI)에서 확인한 필드명을 따른다."""
+"""ENCODE, CELLxGENE, cBioPortal. Response shapes follow the field names checked in each project's official source
+(schemas/OpenAPI)."""
 
 import httpx
 import pytest
@@ -90,7 +91,7 @@ def test_cellxgene_search_filters_and_manifest(cfg, db, client):
     assert meta[0]["files"] == "v-d1.h5ad"
 
     with_rds = cellxgene.search(cfg, db, client, collection_id="c1", asset_types=["H5AD", "RDS"])
-    assert with_rds["summary"]["n_files"] == 2 and with_rds["summary"]["n_files_with_size"] == 1  # -1 = 미상
+    assert with_rds["summary"]["n_files"] == 2 and with_rds["summary"]["n_files_with_size"] == 1  # -1 = unknown
     with pytest.raises(ValueError):
         cellxgene.search(cfg, db, client, asset_types=["LOOM"])
 
@@ -99,7 +100,7 @@ def test_cellxgene_search_filters_and_manifest(cfg, db, client):
 def test_cellxgene_tombstoned_collection_is_skipped(cfg, db, client):
     respx.get(f"{cellxgene.CXG_API}/collections/gone").mock(return_value=httpx.Response(410))
     out = cellxgene.search(cfg, db, client, collection_id="gone")
-    assert out["summary"]["n_datasets"] == 0 and any("철회" in n for n in out["notes"])
+    assert out["summary"]["n_datasets"] == 0 and any("withdrawn" in n for n in out["notes"])
 
 
 # ---------------------------------------------------------------- cBioPortal

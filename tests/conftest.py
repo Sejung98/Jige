@@ -63,14 +63,21 @@ def db(cfg):
     return StateDB(cfg)
 
 
+@pytest.fixture(autouse=True)
+def _no_rate_limit_wait(request, monkeypatch):
+    """Unit tests mock HTTP, so skip the per-host request spacing. Live tests keep it."""
+    if request.node.get_closest_marker("live") is None:
+        monkeypatch.setattr("dataops_mcp.http.MIN_INTERVAL", {})
+
+
 @pytest.fixture
 def client():
-    with httpx.Client(follow_redirects=True) as c:  # 운영 클라이언트(make_client)와 같게
+    with httpx.Client(follow_redirects=True) as c:  # same as the production client (make_client)
         yield c
 
 
 class FakeScheduler:
-    """subprocess.run 대체: 호출 기록, sbatch는 job id, squeue는 지정 상태를 반환."""
+    """subprocess.run replacement: records calls; sbatch returns a job id, squeue returns the configured state."""
 
     def __init__(self, job_id="12345", state="RUNNING"):
         self.calls: list[list[str]] = []
@@ -97,7 +104,7 @@ def fake_sched():
     return FakeScheduler()
 
 
-# ---- 테스트용 discovery 결과 생성 (HTTP 없이) ---------------------------------
+# ---- build discovery results for tests (no HTTP) ---------------------------------
 GDC_ROWS = [
     ("uuid-1", "a.bam", 10, hashlib.md5(b"a" * 10).hexdigest(), "Primary Tumor", "TCGA-A", "TCGA-A-01A"),
     ("uuid-2", "b.bam", 20, hashlib.md5(b"b" * 20).hexdigest(), "Blood Derived Normal", "TCGA-A", "TCGA-A-10A"),

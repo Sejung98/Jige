@@ -1,7 +1,7 @@
-"""지원 데이터베이스 카탈로그.
+"""Catalog of supported databases.
 
-Orchestrator가 "어떤 데이터는 어디서 받나"를 판단하고 사용자에게 설명할 때 쓰는 정적 목록이다.
-수치(파일 수·용량)는 여기 없다. 수치는 반드시 각 discovery 도구의 live 결과로만 말한다.
+A static list the Orchestrator uses to decide "where to get which data" and to explain it to the user.
+It contains no numbers (file counts, sizes). Numbers must always come only from the live results of the discovery tools.
 """
 
 from __future__ import annotations

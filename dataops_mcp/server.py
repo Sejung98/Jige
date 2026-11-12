@@ -1,7 +1,7 @@
-"""DataOps MCP 서버 (stdio).
+"""DataOps MCP server (stdio).
 
-실행: python -m dataops_mcp.server
-`mcp` 패키지 2.x에서는 FastMCP가 MCPServer로 이름이 바뀌었으므로 둘 다 지원한다.
+Run: python -m dataops_mcp.server
+In the `mcp` package 2.x, FastMCP was renamed to MCPServer, so both are supported.
 """
 
 import inspect
@@ -24,11 +24,11 @@ from .security import check_secret_file
 from .state import StateDB
 
 INSTRUCTIONS = """\
-Genomics DataOps 도구 모음. 규칙:
-1) 메타데이터 수치(파일 수·용량·accession)는 반드시 이 도구들의 결과로만 답한다. 기억으로 만들지 않는다.
-2) 결과마다 query_id와 api_queries(근거 API 호출)가 있다. 사용자에게 보고할 때 함께 인용한다.
-3) prepare_* 도구는 스크립트를 생성만 한다. 실행은 submit_job으로만 한다.
-4) submit_job은 기본 dry_run=True. peer-reviewer PASS + 사용자 명시 승인 후에만 confirm=True, dry_run=False.
+Genomics DataOps tools. Rules:
+1) Metadata numbers (file counts, sizes, accessions) must come only from these tools' results. Never make them up from memory.
+2) Every result has a query_id and api_queries (the API calls it is based on). Cite both when reporting to the user.
+3) prepare_* tools only generate scripts. Execution happens only through submit_job.
+4) submit_job defaults to dry_run=True. Use confirm=True, dry_run=False only after a peer-reviewer PASS and explicit user approval.
 """
 
 server = _Server(name="dataops", instructions=INSTRUCTIONS)
@@ -59,7 +59,7 @@ def _run(fn: Callable[[], dict]) -> dict:
         return out
     except (transfer.SubmissionRefused, transfer.ControlledAccessNotAcknowledged) as exc:
         return {"ok": False, "refused": True, "error_type": type(exc).__name__, "error": str(exc)}
-    except Exception as exc:  # 도구 오류는 구조화해서 돌려준다
+    except Exception as exc:  # tool errors are returned in structured form
         return {
             "ok": False,
             "error_type": type(exc).__name__,
@@ -71,8 +71,8 @@ def _run(fn: Callable[[], dict]) -> dict:
 # ---------------------------------------------------------------- environment
 @tool(READ_ONLY)
 def check_environment() -> dict:
-    """설정 요약, 필요한 CLI(gdc-client, nextflow, pyega3, sbatch/qsub) 존재 여부, 크리덴셜 파일 권한을 점검한다.
-    크리덴셜 내용은 읽지 않는다."""
+    """Check the config summary, whether the required CLIs (gdc-client, nextflow, pyega3, sbatch/qsub) exist, and
+    credential file permissions. Never reads credential contents."""
 
     def go() -> dict:
         cfg, _ = _ctx()
@@ -100,8 +100,8 @@ def check_environment() -> dict:
 
 @tool(READ_ONLY)
 def list_databases() -> dict:
-    """지원 데이터베이스 카탈로그(도메인, 데이터 종류, 접근 수준, 담당 도구·subagent, 다운로드 방식)와
-    지원하지 않는 자원 및 이유. 수치는 없다(수치는 각 discovery 도구로만)."""
+    """Catalog of supported databases (domain, data types, access level, responsible tool/subagent, download method)
+    plus unsupported resources and why. Contains no numbers (numbers come only from the discovery tools)."""
     return _run(catalog.list_databases)
 
 
@@ -118,11 +118,18 @@ def gdc_search_files(
     experimental_strategy: StrOrList = None,
     workflow_type: StrOrList = None,
     access: StrOrList = None,
+    case: StrOrList = None,
+    case_file: Optional[str] = None,
+    case_column: Optional[str] = None,
     max_files: int = 50000,
 ) -> dict:
-    """GDC /files 검색(live API). 파일 수·총 용량·케이스 수 요약과 gdc-client manifest TSV 경로를 반환하고
-    query_id로 저장한다. 값 예: project='TCGA-BRCA', experimental_strategy='WGS', data_format='BAM',
-    access='open'|'controlled', workflow_type='STAR - Counts'. 값 철자는 gdc_get_field_values로 확인."""
+    """Search GDC /files (live API). Returns a summary (file count, total size, case count) and the path of a
+    gdc-client manifest TSV, saved under a query_id. Example values: project='TCGA-BRCA', experimental_strategy='WGS',
+    data_format='BAM', access='open'|'controlled', workflow_type='STAR - Counts'. Check value spelling with
+    gdc_get_field_values.
+    To narrow by patient: case=['TCGA-A2-A04P', ...] (case submitter_id or GDC case UUID, do not mix) or
+    case_file=path to a case list file (one per line, '#' comments; for a table with a header row, case_column=column
+    name). Use case_file for many cases. summary.case_filter reports requested, matched and unmatched case counts."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -131,7 +138,8 @@ def gdc_search_files(
                 cfg, db, client, project=project, primary_site=primary_site, disease_type=disease_type,
                 sample_type=sample_type, data_category=data_category, data_type=data_type,
                 data_format=data_format, experimental_strategy=experimental_strategy,
-                workflow_type=workflow_type, access=access, max_files=max_files,
+                workflow_type=workflow_type, access=access, case=case, case_file=case_file,
+                case_column=case_column, max_files=max_files,
             )
 
     return _run(go)
@@ -149,9 +157,14 @@ def gdc_search_cases(
     experimental_strategy: StrOrList = None,
     workflow_type: StrOrList = None,
     access: StrOrList = None,
+    case: StrOrList = None,
+    case_file: Optional[str] = None,
+    case_column: Optional[str] = None,
     max_cases: int = 20000,
 ) -> dict:
-    """GDC /cases 검색(live API). 조건(파일 조건 포함)에 맞는 케이스 수와 project/primary_site 분포를 반환한다."""
+    """Search GDC /cases (live API). Returns the number of cases matching the criteria (file criteria included) and
+    the project/primary_site distribution. case/case_file/case_column work as in gdc_search_files (use them to check
+    which cases in a list match the criteria)."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -160,7 +173,8 @@ def gdc_search_cases(
                 cfg, db, client, project=project, primary_site=primary_site, disease_type=disease_type,
                 sample_type=sample_type, data_category=data_category, data_type=data_type,
                 data_format=data_format, experimental_strategy=experimental_strategy,
-                workflow_type=workflow_type, access=access, max_cases=max_cases,
+                workflow_type=workflow_type, access=access, case=case, case_file=case_file,
+                case_column=case_column, max_cases=max_cases,
             )
 
     return _run(go)
@@ -173,9 +187,10 @@ def gdc_get_field_values(
     search: Optional[str] = None,
     filters: Optional[dict[str, Union[str, list[str]]]] = None,
 ) -> dict:
-    """GDC 필드 값 목록(facets) 또는 필드 이름 목록(_mapping) 조회.
-    field 지정: 해당 필드의 값과 개수(예: field='experimental_strategy', filters={'project': 'TCGA-BRCA'}).
-    field 생략: endpoint의 필드 이름 목록(search로 부분 문자열 필터)."""
+    """List GDC field values (facets) or field names (_mapping).
+    With field: values of that field and their counts
+    (e.g. field='experimental_strategy', filters={'project': 'TCGA-BRCA'}).
+    Without field: field names of the endpoint (filter by substring with search)."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -189,9 +204,9 @@ def gdc_get_field_values(
 # ---------------------------------------------------------------- discovery: SRA / EGA
 @tool(READ_ONLY)
 def sra_search(accession: str, library_strategy: Optional[str] = None, max_runs: int = 20000) -> dict:
-    """SRA/ENA/DDBJ/GEO accession(PRJNA, PRJEB, SRP, ERP, SRX, SRR, SAMN, GSE, GSM; 쉼표로 여러 개)의
-    run 단위 메타데이터를 ENA Portal API filereport로 조회(GEO는 NCBI E-utilities로 해석).
-    library_strategy(예: 'RNA-Seq', 'WGS')로 run을 거를 수 있다."""
+    """Look up run-level metadata for SRA/ENA/DDBJ/GEO accessions (PRJNA, PRJEB, SRP, ERP, SRX, SRR, SAMN, GSE, GSM;
+    several separated by commas) via the ENA Portal API filereport (GEO is resolved through NCBI E-utilities).
+    Runs can be filtered by library_strategy (e.g. 'RNA-Seq', 'WGS')."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -204,8 +219,8 @@ def sra_search(accession: str, library_strategy: Optional[str] = None, max_runs:
 
 @tool(READ_ONLY)
 def ega_search(accession: str, include_files: bool = True) -> dict:
-    """EGA 공개 메타데이터 API로 study(EGAS)/dataset(EGAD)/file(EGAF) 조회. 파일 목록과 총 용량을 반환한다.
-    EGA 데이터는 모두 controlled access."""
+    """Look up a study (EGAS)/dataset (EGAD)/file (EGAF) through the EGA public metadata API. Returns the file list and
+    total size. All EGA data is controlled access."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -226,8 +241,9 @@ def encode_search(
     search_term: Optional[str] = None,
     limit: int = 500,
 ) -> dict:
-    """ENCODE 실험 검색(released). 예: assay_title='ATAC-seq'|'TF ChIP-seq'|'Histone ChIP-seq'|'total RNA-seq',
-    biosample='K562', target='CTCF', organism='Homo sapiens', assembly='GRCh38'. 실험 목록 TSV와 분포를 반환."""
+    """Search ENCODE experiments (released).
+    e.g. assay_title='ATAC-seq'|'TF ChIP-seq'|'Histone ChIP-seq'|'total RNA-seq', biosample='K562', target='CTCF',
+    organism='Homo sapiens', assembly='GRCh38'. Returns an experiment list TSV and distributions."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -247,8 +263,9 @@ def encode_files(
     file_format: StrOrList = None,
     preferred_default_only: bool = False,
 ) -> dict:
-    """ENCODE 실험(ENCSR...)들의 released 파일 목록·크기·md5를 manifest로 저장. encode_search의 query_id도 받는다.
-    예: assembly='GRCh38', output_type='conservative IDR thresholded peaks', file_format='bed'."""
+    """Save the released files (list, sizes, md5) of ENCODE experiments (ENCSR...) as a manifest. Also accepts an
+    encode_search query_id.
+    e.g. assembly='GRCh38', output_type='conservative IDR thresholded peaks', file_format='bed'."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -270,8 +287,8 @@ def cellxgene_search(
     collection_id: Optional[str] = None,
     asset_types: Optional[list[str]] = None,
 ) -> dict:
-    """CZ CELLxGENE Discover에서 단일세포 데이터셋 검색(라벨 부분일치, 대소문자 무시). 예: tissue='lung',
-    disease='COVID-19', assay='10x 3', organism='Homo sapiens'. 기본 asset은 H5AD."""
+    """Search single-cell datasets in CZ CELLxGENE Discover (partial label match, case-insensitive). e.g. tissue='lung',
+    disease='COVID-19', assay='10x 3', organism='Homo sapiens'. Default asset is H5AD."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -284,8 +301,8 @@ def cellxgene_search(
 
 @tool(READ_ONLY)
 def cbioportal_search(keyword: Optional[str] = None, study_ids: Optional[list[str]] = None) -> dict:
-    """cBioPortal study 검색(keyword: 이름·ID·암종 부분일치) 또는 study_ids 지정. study별 샘플 수·참조 게놈과
-    datahub tarball manifest를 반환."""
+    """Search cBioPortal studies (keyword: partial match on name, ID or cancer type) or give study_ids. Returns
+    per-study sample counts and reference genome, and a datahub tarball manifest."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -304,8 +321,9 @@ def geo_files(
     include: Optional[list[str]] = None,
     exclude: Optional[list[str]] = None,
 ) -> dict:
-    """GEO 처리 데이터(GSE/GSM)의 supplementary 파일과 series matrix 목록·크기를 조회해 manifest로 저장.
-    include/exclude는 파일명 glob(예: ['*.h5', '*counts*'], exclude=['*_RAW.tar']). 원시 read는 sra_search."""
+    """List the supplementary files and series matrix files (with sizes) of GEO processed data (GSE/GSM) and save
+    them as a manifest. include/exclude are filename globs (e.g. ['*.h5', '*counts*'], exclude=['*_RAW.tar']).
+    For raw reads use sra_search."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -320,8 +338,8 @@ def geo_files(
 def arrayexpress_files(
     accession: str, include: Optional[list[str]] = None, exclude: Optional[list[str]] = None
 ) -> dict:
-    """ArrayExpress(E-MTAB-, E-GEOD- 등; EBI BioStudies)의 처리 데이터·MAGE-TAB 파일 목록·크기를 manifest로 저장.
-    연결된 ENA study(원시 read)도 알려준다."""
+    """Save the processed-data and MAGE-TAB files (list, sizes) of an ArrayExpress entry (E-MTAB-, E-GEOD-, etc.;
+    EBI BioStudies) as a manifest. Also reports the linked ENA study (raw reads)."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -338,8 +356,8 @@ def pride_files(
     include: Optional[list[str]] = None,
     exclude: Optional[list[str]] = None,
 ) -> dict:
-    """PRIDE 프로테오믹스 프로젝트(PXD)의 파일 목록·크기·MD5를 manifest로 저장.
-    categories로 RAW, SEARCH, RESULT, PEAK, OTHER 등을 고를 수 있다."""
+    """Save the file list, sizes and MD5 of a PRIDE proteomics project (PXD) as a manifest.
+    categories selects RAW, SEARCH, RESULT, PEAK, OTHER, etc."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -352,8 +370,8 @@ def pride_files(
 
 @tool(READ_ONLY)
 def zenodo_files(record: str, include: Optional[list[str]] = None, exclude: Optional[list[str]] = None) -> dict:
-    """Zenodo 레코드(번호, 10.5281/zenodo.N DOI 또는 URL)의 파일 목록·크기·MD5를 manifest로 저장.
-    concept DOI는 최신 버전으로 해석된다."""
+    """Save the file list, sizes and MD5 of a Zenodo record (number, 10.5281/zenodo.N DOI or URL) as a manifest.
+    A concept DOI resolves to the latest version."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -365,8 +383,8 @@ def zenodo_files(record: str, include: Optional[list[str]] = None, exclude: Opti
 
 @tool(READ_ONLY)
 def url_inspect(urls: list[str], subdir: str = "") -> dict:
-    """카탈로그에 없는 공개 파일(예: Ensembl/GENCODE 레퍼런스, gnomAD, 1000 Genomes)의 HTTPS URL을 HEAD로
-    확인(존재·크기)하고 다운로드 manifest로 저장한다."""
+    """Check HTTPS URLs of public files not in the catalog (e.g. Ensembl/GENCODE references, gnomAD, 1000 Genomes)
+    with HEAD (existence, size) and save them as a download manifest."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -378,13 +396,13 @@ def url_inspect(urls: list[str], subdir: str = "") -> dict:
 
 @tool(READ_ONLY)
 def get_query(query_id: str) -> dict:
-    """저장된 discovery 결과(요약, 파라미터, 근거 API 호출, manifest 경로)를 query_id로 조회."""
+    """Look up a saved discovery result (summary, parameters, provenance API calls, manifest path) by query_id."""
 
     def go() -> dict:
         _, db = _ctx()
         q = db.get_query(query_id)
         if q is None:
-            raise KeyError(f"query_id {query_id!r} 없음")
+            raise KeyError(f"query_id {query_id!r} not found")
         return q
 
     return _run(go)
@@ -392,7 +410,7 @@ def get_query(query_id: str) -> dict:
 
 @tool(READ_ONLY)
 def list_queries(limit: int = 20) -> dict:
-    """최근 discovery 결과 목록."""
+    """List recent discovery results."""
 
     def go() -> dict:
         _, db = _ctx()
@@ -411,10 +429,11 @@ def prepare_download(
     download_method: Optional[str] = None,
     use_dbgap: bool = False,
 ) -> dict:
-    """query_id의 다운로드 job 스크립트를 생성한다(실행하지 않음). GDC=gdc-client, SRA/ENA/GEO=nf-core/fetchngs,
-    EGA=pyega3. controlled 데이터는 사용자 확인 후 acknowledge_controlled_access=True가 필요하다.
-    nf_core_pipeline/download_method는 fetchngs 옵션(download_method: ftp|sratools|aspera|fastq-dl).
-    use_dbgap=True: dbGaP 보호 SRA run을 config.dbgap_key_path(.ngc)로 받는다(controlled, 확인 필요)."""
+    """Generate a download job script for query_id (does not run it). GDC=gdc-client, SRA/ENA/GEO=nf-core/fetchngs,
+    EGA=pyega3. Controlled data requires acknowledge_controlled_access=True, set only after user confirmation.
+    nf_core_pipeline/download_method are fetchngs options (download_method: ftp|sratools|aspera|fastq-dl).
+    use_dbgap=True: download dbGaP-protected SRA runs with config.dbgap_key_path (.ngc) (controlled, confirmation
+    required)."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -428,8 +447,8 @@ def prepare_download(
 
 @tool(LOCAL_WRITE)
 def verify_download(query_id: str, dest: Optional[str] = None, check_md5: bool = False) -> dict:
-    """다운로드 결과를 manifest와 대조(파일 존재·크기, .partial 잔여). check_md5=True면 md5 재검증
-    (용량이 크면 md5 검증 job 스크립트를 생성)."""
+    """Check downloaded files against the manifest (presence, size, leftover .partial files). check_md5=True
+    re-verifies md5 (for large data, generates an md5 verification job script instead)."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -443,9 +462,9 @@ def verify_download(query_id: str, dest: Optional[str] = None, check_md5: bool =
     meta={"anthropic/requiresUserInteraction": True},
 )
 def submit_job(script_path: str, confirm: bool = False, dry_run: bool = True) -> dict:
-    """생성된 job 스크립트를 스케줄러에 제출. 기본값은 dry_run=True(제출하지 않고 명령만 보여줌).
-    실제 제출 조건: confirm=True AND dry_run=False AND peer-reviewer PASS 기록(현재 해시와 일치)
-    AND 동시 실행 한도 미만. 사용자의 명시적 승인 없이 confirm=True를 쓰지 말 것."""
+    """Submit a generated job script to the scheduler. Default is dry_run=True (shows the command without submitting).
+    Actual submission requires: confirm=True AND dry_run=False AND a peer-reviewer PASS record (matching the current
+    hash) AND fewer running jobs than the concurrency limit. Never use confirm=True without explicit user approval."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -456,7 +475,7 @@ def submit_job(script_path: str, confirm: bool = False, dry_run: bool = True) ->
 
 @tool(READ_ONLY)
 def job_status(job_id: str, log_lines: int = 30) -> dict:
-    """job 상태(squeue/sacct, qstat, 또는 로컬 PID)와 로그 꼬리(민감 문자열 가림)를 반환."""
+    """Return job status (squeue/sacct, qstat, or local PID) and the log tail (sensitive strings masked)."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -472,7 +491,7 @@ def list_jobs(
     limit: int = 20,
     include_dry_run: bool = False,
 ) -> dict:
-    """제출한 job 목록(상태 갱신 포함). since_hours=48이면 최근 48시간."""
+    """List submitted jobs (status refreshed). since_hours=48 means the last 48 hours."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -494,9 +513,10 @@ def build_samplesheet(
     sex_map: Optional[dict[str, str]] = None,
     patient_map: Optional[dict[str, str]] = None,
 ) -> dict:
-    """다운로드된 파일로 nf-core samplesheet CSV 생성. pipeline='rnaseq'(sample,fastq_1,fastq_2,strandedness)
-    또는 'sarek'(FASTQ: patient,sex,status,sample,lane,fastq_1,fastq_2 / GDC BAM: patient,sex,status,sample,bam,bai).
-    status_map={'sample': 1}로 tumor 지정, sex_map 값은 XX|XY|NA."""
+    """Generate an nf-core samplesheet CSV from downloaded files.
+    pipeline='rnaseq' (sample,fastq_1,fastq_2,strandedness)
+    or 'sarek' (FASTQ: patient,sex,status,sample,lane,fastq_1,fastq_2 / GDC BAM: patient,sex,status,sample,bam,bai).
+    status_map={'sample': 1} marks tumor; sex_map values are XX|XY|NA."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -516,8 +536,8 @@ def prepare_pipeline(
     outdir: Optional[str] = None,
     run_name: Optional[str] = None,
 ) -> dict:
-    """nextflow run 스크립트(+params.yaml, 사이트 config)를 생성(실행하지 않음). 버전은 X.Y.Z로 고정
-    (생략 시 config 값). params에 reference='<config.references 이름>' 또는 genome='<iGenomes 키>'를 지정."""
+    """Generate a nextflow run script (+ params.yaml, site config) (does not run it). The version is pinned as X.Y.Z
+    (config value if omitted). In params, set reference='<config.references name>' or genome='<iGenomes key>'."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -530,8 +550,9 @@ def prepare_pipeline(
 # ---------------------------------------------------------------- review
 @tool(READ_ONLY)
 def preflight_check(script_path: str) -> dict:
-    """[읽기 전용] 생성된 스크립트·samplesheet·파라미터 자동 점검: 레퍼런스 일치, paired/single, 디스크 여유,
-    controlled-access 취급, 버전 고정, 무결성, 크리덴셜 노출. PASS/FAIL과 결함 목록 반환."""
+    """[read-only] Automated check of a generated script, samplesheet and parameters: reference consistency,
+    paired/single, free disk space, controlled-access handling, version pinning, integrity, credential exposure.
+    Returns PASS/FAIL and a list of defects."""
 
     def go() -> dict:
         cfg, db = _ctx()
@@ -542,8 +563,8 @@ def preflight_check(script_path: str) -> dict:
 
 @tool(LOCAL_WRITE)
 def record_review(script_path: str, verdict: str, defects: Optional[list[str]] = None) -> dict:
-    """peer-reviewer의 판정(PASS/FAIL)과 결함 목록을 감사 기록에 남긴다. 자동 점검이 FAIL이면 PASS를 줘도
-    FAIL로 기록된다. 산출물 자체는 수정하지 않는다."""
+    """Record the peer-reviewer verdict (PASS/FAIL) and defect list in the audit log. If the automated check FAILs,
+    a PASS verdict is still recorded as FAIL. Does not modify the artifacts themselves."""
 
     def go() -> dict:
         cfg, db = _ctx()

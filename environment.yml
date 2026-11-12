@@ -1,0 +1,19 @@
+# External command-line tools used by Jige's generated job scripts.
+#   conda env create -f environment.yml      (or: mamba env create -f environment.yml)
+#   conda activate jige_tools && PYTHON=python ./install.sh
+# Then point config.yaml at them if the env is not on PATH inside jobs, e.g.
+#   tools: {gdc_client: <env>/bin/gdc-client, pyega3: <env>/bin/pyega3, nextflow: <env>/bin/nextflow}
+#   module_loads: ["export NXF_JAVA_HOME=<env>/lib/jvm"]
+# Versions below were tested together on a Slurm cluster (2026-11-12).
+# Singularity/Apptainer and the scheduler come from your site, not from conda.
+name: jige_tools
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12          # also fine for Jige's own .venv (needs >= 3.10)
+  - nextflow=26.10.5     # nf-core fetchngs/rnaseq/sarek need >= 25.10.4; pulls in OpenJDK
+  - gdc-client=2.7.0
+  - tenacity             # gdc-client 2.7.0 imports it but the bioconda package does not declare it
+  - pyega3=5.2.0         # only for EGA downloads
+  - curl

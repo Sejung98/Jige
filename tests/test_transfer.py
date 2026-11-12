@@ -45,7 +45,7 @@ def test_prepare_gdc_controlled_token_path_only_and_perm_warning(cfg, db):
     out = transfer.prepare_download(cfg, db, qid, acknowledge_controlled_access=True)
     text = Path(out["script_path"]).read_text()
     assert f"--token-file {token}" in text
-    assert secret not in text and secret not in str(out)  # 토큰 내용은 어디에도 노출되지 않음
+    assert secret not in text and secret not in str(out)  # token contents are never exposed anywhere
     assert "umask 077" in text
     assert any("chmod 600" in w for w in out["warnings"])
 
@@ -57,7 +57,7 @@ def test_prepare_sra_fetchngs_compute_mode(cfg, db):
     assert "run nf-core/fetchngs" in text and "-r 1.13.0" in text and "-profile singularity" in text
     assert "-resume" in text
     ids = (cfg.manifests_dir / f"{qid}.ids.csv").read_text().split()
-    assert ids == ["SRR1", "SRR2"]  # 헤더 없이 한 줄에 하나
+    assert ids == ["SRR1", "SRR2"]  # one per line, no header
     run_dir = Path(out["script_path"]).parents[2] / "runs" / f"{qid}_fetchngs"
     params = yaml.safe_load((run_dir / "params.yaml").read_text())
     assert params["nf_core_pipeline"] == "rnaseq" and params["outdir"] == out["dest"]
@@ -96,7 +96,7 @@ def test_verify_download_gdc(cfg, db):
     rep = transfer.verify_download(cfg, db, qid, check_md5=True)
     assert rep["status"] == "PASS" and rep["md5_checked_inline"]
 
-    (dest / "uuid-2" / "b.bam").write_bytes(b"c" * 20)  # 같은 크기, 다른 내용
+    (dest / "uuid-2" / "b.bam").write_bytes(b"c" * 20)  # same size, different content
     rep = transfer.verify_download(cfg, db, qid, check_md5=True)
     assert rep["status"] == "FAIL" and rep["md5_mismatch"] == ["b.bam"]
 
@@ -141,7 +141,7 @@ def test_controlled_dest_world_readable_warns(cfg, db):
     dest.mkdir(parents=True)
     os.chmod(dest, 0o755)
     out = transfer.prepare_download(cfg, db, qid, acknowledge_controlled_access=True)
-    assert any("다른 사용자에게 열려" in w for w in out["warnings"])
+    assert any("open to other users" in w for w in out["warnings"])
     assert read_tsv(db.get_query(qid)["manifest_path"])[0]["id"] == "uuid-1"
 
 
@@ -162,7 +162,7 @@ def test_dbgap_download_requires_ack_and_ngc(tmp_path, monkeypatch):
     assert params["dbgap_key"] == str(ngc) and params["download_method"] == "sratools"
     assert out["access"] == "controlled" and "umask 077" in out["script_text"]
     params_text = (cfg.state_dir / "runs" / f"{qid}_fetchngs" / "params.yaml").read_text()
-    assert "NGC-SECRET-CONTENT" not in out["script_text"] + params_text  # 키는 경로로만 전달
+    assert "NGC-SECRET-CONTENT" not in out["script_text"] + params_text  # key is passed by path only
     gdc_q = add_gdc_query(cfg, db, GDC_FILES)
     with pytest.raises(ValueError):
         transfer.prepare_download(cfg, db, gdc_q, use_dbgap=True)

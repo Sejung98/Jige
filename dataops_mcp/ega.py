@@ -1,19 +1,20 @@
-"""European Genome-phenome Archive (EGA) 공개 메타데이터 discovery.
+"""Public metadata discovery for the European Genome-phenome Archive (EGA).
 
-근거 (2026-10-30 확인):
-- 공식 문서 "Metadata Public API": https://ega-archive.org/discovery/metadata/public-metadata-api/
+Sources (checked 2026-10-30):
+- Official docs "Metadata Public API": https://ega-archive.org/discovery/metadata/public-metadata-api/
   * base URL: https://metadata.ega-archive.org
-  * 객체 조회 패턴 /{object}/{accession} (studies, datasets, files, samples, runs, analyses, dacs)
-  * 교차 조회 예: /datasets/EGAD00001000645/files, /files/EGAF00000056146/dacs
-  * 목록 조회는 limit / offset 페이지네이션
-- 구 API(https://ega-archive.org/metadata/v2/...)는 사용하지 않는다.
+  * object lookup pattern /{object}/{accession} (studies, datasets, files, samples, runs, analyses, dacs)
+  * cross-lookup examples: /datasets/EGAD00001000645/files, /files/EGAF00000056146/dacs
+  * list endpoints paginate with limit / offset
+- The old API (https://ega-archive.org/metadata/v2/...) is not used.
 
-주의: 이 세션의 네트워크 정책 때문에 구현 시점에 위 엔드포인트를 직접 호출해 보지 못했다.
-문서 원문과 공개 클라이언트(ToolUniverse ega_tool: accession_id, title, num_samples,
-access_type 등 필드 사용)를 근거로 작성했다. 파일 객체의 필드명은 문서에 응답 예시가 없어
-여러 후보 키를 허용하도록 작성했으니, 서버에서 `pytest -m live`로 실제 응답을 확인할 것.
+Note: because of this session's network policy, the endpoints above could not be called directly at
+implementation time. This module was written from the documentation and a public client
+(ToolUniverse ega_tool, which uses fields such as accession_id, title, num_samples, access_type).
+The docs give no response example for file objects, so several candidate keys are accepted for
+their field names; confirm the real responses on a server with `pytest -m live`.
 
-EGA 데이터 파일은 전부 controlled access이며 다운로드에는 DAC 승인이 필요하다.
+All EGA data files are controlled access, and downloading them requires DAC approval.
 """
 
 from __future__ import annotations
@@ -47,7 +48,11 @@ def _first(d: dict, keys: tuple[str, ...]) -> Any:
 
 
 def _get(client: httpx.Client, log: http.ApiLog, path: str, retries: int, params: dict | None = None) -> Any:
-    resp = http.request(client, log, "GET", f"{EGA_METADATA_API}{path}", params=params, retries=retries)
+    # List endpoints (e.g. /datasets/{acc}/files) answer 206 Partial Content even when the page holds
+    # every item (checked 2026-11-12 against EGAD00001000645: 42 files, HTTP 206). Pagination is still
+    # driven by limit/offset in _list_paginated, so 206 is a normal answer here.
+    resp = http.request(client, log, "GET", f"{EGA_METADATA_API}{path}", params=params, retries=retries,
+                        ok_status=(200, 206))
     return resp.json()
 
 
@@ -120,7 +125,7 @@ def search(
     acc = accession.strip().upper()
     m = ACC_RE.match(acc)
     if not m:
-        raise ValueError(f"EGA accession 형식이 아닙니다: {accession!r} (EGAS/EGAD/EGAF + 11자리 숫자)")
+        raise ValueError(f"Not an EGA accession: {accession!r} (EGAS/EGAD/EGAF + 11 digits)")
     kind = m.group(1)
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
@@ -172,9 +177,9 @@ def search(
         "manifest_path": str(manifest_path) if manifest_path else None,
         "preview": files[:5],
         "api_queries": log.calls,
-        "note": "EGA 파일은 모두 controlled access입니다. 다운로드 전에 DAC 승인과 기관 규정을 확인하세요.",
+        "note": "All EGA files are controlled access. Confirm DAC approval and institutional rules before downloading.",
         **out,
     }
     if files and len(sizes) < len(files):
-        result["warning"] = "일부 파일의 크기 필드를 찾지 못했습니다. 총 용량은 하한값입니다."
+        result["warning"] = "Size field not found for some files. The total size is a lower bound."
     return result

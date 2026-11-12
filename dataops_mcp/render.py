@@ -1,8 +1,8 @@
-"""Jinja2 템플릿 렌더링과 생성 산출물 등록.
+"""Jinja2 template rendering and registration of generated artifacts.
 
-생성된 스크립트는 state_dir/scripts/ 아래에만 쓰고, 스크립트와 그 입력 파일들
-(manifest, samplesheet, params, nextflow config)의 묶음 해시(bundle sha256)를 기록한다.
-검수(record_review)와 제출(submit_job)은 이 해시가 일치할 때만 유효하다.
+Generated scripts are written only under state_dir/scripts/, and a combined hash (bundle sha256) of the script and
+its input files (manifest, samplesheet, params, nextflow config) is recorded.
+Review (record_review) and submission (submit_job) are valid only while this hash matches.
 """
 
 from __future__ import annotations

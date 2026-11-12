@@ -1,7 +1,7 @@
-"""실제 API 스모크 테스트. 기본 실행에서는 제외되며 `pytest -m live`로 실행한다.
+"""Smoke tests against the real APIs. Excluded from the default run; run with `pytest -m live`.
 
-테스트 accession은 nf-core/fetchngs 테스트 목록(SRR390278, GSE18729)과
-EGA 공식 문서 예시(EGAD00001000645)에서 가져왔다.
+Test accessions come from the nf-core/fetchngs test list (SRR390278, GSE18729) and
+the official EGA documentation example (EGAD00001000645).
 """
 
 import pytest
@@ -10,6 +10,11 @@ from dataops_mcp import ega, gdc, sra
 from dataops_mcp.http import make_client
 
 pytestmark = pytest.mark.live
+
+
+@pytest.fixture(autouse=True)
+def _live_retries(cfg):
+    cfg.data.setdefault("http", {})["retries"] = 3  # unit-test config uses 0; real APIs need retries
 
 
 @pytest.fixture
@@ -52,11 +57,11 @@ def test_ega_dataset(cfg, db, live_client):
     assert out["summary"]["n_datasets"] == 1
 
 
-# ---- 추가 저장소 (accession은 각 공식 클라이언트/문서의 예시) -------------------------------
+# ---- additional repositories (accessions are examples from each official client/docs) ------
 def test_geo_supplementary_files(cfg, db, live_client):
     from dataops_mcp import geo
 
-    out = geo.files(cfg, db, live_client, accession="GSE137303")  # GEOquery·fetch-series 예시
+    out = geo.files(cfg, db, live_client, accession="GSE137303")  # GEOquery / fetch-series example
     print(out["summary"], out["preview"])
     assert out["summary"]["n_files"] >= 1
 
@@ -72,7 +77,7 @@ def test_arrayexpress_files(cfg, db, live_client):
 def test_pride_files(cfg, db, live_client):
     from dataops_mcp import pride
 
-    out = pride.files(cfg, db, live_client, accession="PXD008644")  # pridepy 테스트 프로젝트
+    out = pride.files(cfg, db, live_client, accession="PXD008644")  # pridepy test project
     print(out["summary"])
     assert out["summary"]["n_files"] >= 1
 
@@ -88,7 +93,7 @@ def test_zenodo_files(cfg, db, live_client):
 def test_encode_experiment_files(cfg, db, live_client):
     from dataops_mcp import encode
 
-    out = encode.files(cfg, db, live_client, experiments=["ENCSR356KRQ"], assembly="GRCh38")  # ENCODE ATAC 파이프라인 테스트셋
+    out = encode.files(cfg, db, live_client, experiments=["ENCSR356KRQ"], assembly="GRCh38")  # ENCODE ATAC pipeline test set
     print(out["summary"])
     assert out["summary"]["n_files"] >= 1
 
@@ -110,6 +115,6 @@ def test_cbioportal_study(cfg, db, live_client):
 
 
 def test_sra_dbgap_flag(cfg, db, live_client):
-    out = sra.search(cfg, db, live_client, accession="SRR27651451")  # phs002857 (metadata는 공개)
+    out = sra.search(cfg, db, live_client, accession="SRR27651451")  # phs002857 (metadata is public)
     print(out["summary"])
     assert out["summary"]["n_runs"] == 1

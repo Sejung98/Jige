@@ -1,12 +1,12 @@
-"""PRIDE Archive(질량분석 프로테오믹스) discovery.
+"""PRIDE Archive (mass-spectrometry proteomics) discovery.
 
-근거 (2026-10-30 확인, 공식 클라이언트 PRIDE-Archive/pridepy 소스):
-- 공개 데이터 API: https://www.ebi.ac.uk/pride/ws/archive/v3/
-  GET projects/{PXD}             : 프로젝트 메타데이터
-  GET projects/{PXD}/files/all   : 전체 파일 배열 (fileName, fileSizeBytes, fileCategory.value,
+Sources (checked 2026-10-30, official client PRIDE-Archive/pridepy source):
+- Public data API: https://www.ebi.ac.uk/pride/ws/archive/v3/
+  GET projects/{PXD}             : project metadata
+  GET projects/{PXD}/files/all   : full file array (fileName, fileSizeBytes, fileCategory.value,
                                    publicFileLocations[{name:'FTP Protocol', value:'ftp://ftp.pride.ebi.ac.uk/...'}])
-  GET files/checksum/{PXD}       : 'File-Name  File-MD5Checksum  File-Size' TSV (파일 레코드의 checksum은 비어 있음)
-- HTTPS 다운로드: ftp://ftp.pride.ebi.ac.uk/ -> https://ftp.pride.ebi.ac.uk/ (pridepy ARCHIVE_HTTPS_URL_PREFIX)
+  GET files/checksum/{PXD}       : 'File-Name  File-MD5Checksum  File-Size' TSV (the checksum in file records is empty)
+- HTTPS download: ftp://ftp.pride.ebi.ac.uk/ -> https://ftp.pride.ebi.ac.uk/ (pridepy ARCHIVE_HTTPS_URL_PREFIX)
 """
 
 from __future__ import annotations
@@ -57,10 +57,10 @@ def files(
 ) -> dict[str, Any]:
     acc = accession.strip().upper()
     if not ACC_RE.match(acc):
-        raise ValueError(f"PRIDE accession 형식이 아닙니다: {accession!r} (예: PXD008644)")
+        raise ValueError(f"Not a PRIDE accession: {accession!r} (e.g. PXD008644)")
     wanted = {c.upper() for c in (categories or [])}
     if wanted - set(CATEGORIES):
-        raise ValueError(f"categories는 {CATEGORIES} 중에서 고르세요.")
+        raise ValueError(f"categories must be chosen from {CATEGORIES}.")
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
     project = http.request(client, log, "GET", f"{PRIDE_API}/projects/{acc}", retries=retries).json()

@@ -61,7 +61,7 @@ def test_sra_search_resolves_geo_series(cfg, db, client):
     respx.get(sra.ENA_FILEREPORT).mock(return_value=httpx.Response(200, text=tsv(
         ena_row("SRR1"), ena_row("SRR2"), ena_row("SRR9"))))
     out = sra.search(cfg, db, client, accession="GSE18729")
-    assert out["summary"]["n_runs"] == 2  # SRR9는 GSE에 속하지 않으므로 제외
+    assert out["summary"]["n_runs"] == 2  # SRR9 is not part of the GSE, so it is excluded
     assert any("GSE18729" in n for n in out["notes"])
 
 
@@ -89,7 +89,8 @@ def test_ega_dataset_files(cfg, db, client):
     acc = "EGAD00001000645"
     respx.get(f"{ega.EGA_METADATA_API}/datasets/{acc}").mock(return_value=httpx.Response(200, json={
         "accession_id": acc, "title": "test", "num_samples": 2, "access_type": "controlled"}))
-    respx.get(f"{ega.EGA_METADATA_API}/datasets/{acc}/files").mock(return_value=httpx.Response(200, json=[
+    # The real API answers file lists with 206 Partial Content (checked 2026-11-12).
+    respx.get(f"{ega.EGA_METADATA_API}/datasets/{acc}/files").mock(return_value=httpx.Response(206, json=[
         {"accession_id": "EGAF00000000001", "filename": "a.bam.cip", "size": 1000, "unencrypted_checksum": "x"},
         {"accession_id": "EGAF00000000002", "file_name": "b.bam", "file_size": 2000},
     ]))

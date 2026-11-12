@@ -31,8 +31,8 @@ www.encodeproject.org and its S3 redirect target, zenodo.org):
 | Part | State |
 |---|---|
 | Plain-LLM answers (arm B) | Collected: [`baseline_plain_llm.md`](baseline_plain_llm.md) |
-| Team run (arm A) | Done on cpm-server1 (2026-10-30): [`results/2026-10-30_cpm-server1/`](results/2026-10-30_cpm-server1/). The earlier sandbox attempt (all proxy 403) is kept in [`results/2026-10-30_cloud-sandbox_blocked/`](results/2026-10-30_cloud-sandbox_blocked/). |
-| Comparison report | [`REPORT.md`](REPORT.md) (Korean) |
+| Team run (arm A) | Done on lab-server (2026-10-30): [`results/2026-10-30_lab-server/`](results/2026-10-30_lab-server/). The earlier sandbox attempt (all proxy 403) is kept in [`results/2026-10-30_cloud-sandbox_blocked/`](results/2026-10-30_cloud-sandbox_blocked/). |
+| Comparison report | [`REPORT.md`](REPORT.md) |
 
 ## Folder layout
 
@@ -41,7 +41,7 @@ benchmarks/
 ├── README.md                    # protocol and status (this file)
 ├── REPORT.md                    # comparison report
 ├── live_comparison.py           # arm A runner (team code path, local runner, real downloads)
-├── baseline_plain_llm.md        # arm B answers, verbatim
+├── baseline_plain_llm.md        # arm B answers (translated from Korean, otherwise verbatim)
 └── results/
     └── <date>_<where>/team_results.json   # one folder per run
 ```

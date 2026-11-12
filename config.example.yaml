@@ -1,68 +1,68 @@
-# genomics-dataops-team 설정 예시
-# install.sh가 이 파일을 config.yaml로 복사합니다. config.yaml은 git에 올라가지 않습니다(.gitignore).
-# 상대경로는 이 파일이 있는 저장소 폴더 기준이며, ~ 와 $VAR 는 확장됩니다.
-# 서버 이름·사용자명·절대경로는 코드가 아니라 여기에만 적으세요.
+# Jige example configuration
+# install.sh copies this file to config.yaml. config.yaml is not committed to git (.gitignore).
+# Relative paths are relative to the repository folder containing this file; ~ and $VAR are expanded.
+# Put server names, user names, and absolute paths here only, never in code.
 
-# ---------------------------------------------------------------- 스케줄러
-scheduler: slurm            # slurm | pbs | local  (local = 스케줄러 없이 현재 노드에서 실행)
-partition: ""               # [채우기] 예: normal   (PBS는 queue 이름)
-account: ""                 # [채우기] 과금 계정이 있으면  (sbatch --account / qsub -A)
-qos: ""                     # 선택
+# ---------------------------------------------------------------- scheduler
+scheduler: slurm            # slurm | pbs | local  (local = run on the current node without a scheduler)
+partition: ""               # [FILL IN] e.g. normal   (queue name for PBS)
+account: ""                 # [FILL IN] billing account, if any  (sbatch --account / qsub -A)
+qos: ""                     # optional
 
-# 계산 노드에서 인터넷이 되는지에 따라 다운로드 job이 실행될 위치
-#   compute : 계산 노드에서 인터넷 가능 -> 다운로드도 일반 스케줄러 job
-#   dtn     : 데이터 전송 전용 파티션/노드가 있음 -> transfer_partition으로 제출
-#   login   : 로그인 노드만 인터넷 가능 -> 로그인 노드에서 nohup 백그라운드 실행
-# 확인 방법: 계산 노드에서  curl -sI https://api.gdc.cancer.gov/status
-transfer_node_mode: compute # [채우기]
-transfer_partition: ""      # transfer_node_mode=dtn 일 때 필수
+# Where download jobs run, depending on whether compute nodes have internet access
+#   compute : compute nodes have internet -> downloads are ordinary scheduler jobs
+#   dtn     : a dedicated data-transfer partition/node exists -> submit to transfer_partition
+#   login   : only login nodes have internet -> nohup background run on the login node
+# How to check: on a compute node run  curl -sI https://api.gdc.cancer.gov/status
+transfer_node_mode: compute # [FILL IN]
+transfer_partition: ""      # required when transfer_node_mode=dtn
 
-container: singularity      # singularity | apptainer | docker  (nf-core -profile 이름과 같음)
+container: singularity      # singularity | apptainer | docker  (same as the nf-core -profile name)
 
-# ---------------------------------------------------------------- 경로
-data_root: ./data           # [채우기] 다운로드/결과 저장 위치 (대용량 스토리지 권장, 예: /scratch/$USER/dataops)
-work_dir: ./work            # [채우기] Nextflow work 디렉토리 (scratch 권장)
-state_dir: ./state          # 요청·job 기록(SQLite)과 생성 스크립트. NFS/Lustre보다 홈/로컬 디스크 권장
-singularity_cache: ./singularity_cache   # [채우기] 컨테이너 이미지 캐시 (공유 캐시가 있으면 그 경로)
+# ---------------------------------------------------------------- paths
+data_root: ./data           # [FILL IN] where downloads/results go (large storage recommended, e.g. /scratch/$USER/dataops)
+work_dir: ./work            # [FILL IN] Nextflow work directory (scratch recommended)
+state_dir: ./state          # request/job records (SQLite) and generated scripts. Home/local disk preferred over NFS/Lustre
+singularity_cache: ./singularity_cache   # [FILL IN] container image cache (use the shared cache path if one exists)
 
-# ---------------------------------------------------------------- 크리덴셜 (경로만! 내용은 절대 여기에 쓰지 않음)
-# 두 파일 모두 chmod 600 으로 두세요. 도구는 파일 내용을 읽지 않고 경로만 전달합니다.
-gdc_token_path: ~/.gdc/gdc-user-token.txt        # GDC Data Portal에서 받은 토큰 (controlled 데이터용)
+# ---------------------------------------------------------------- credentials (paths only! never put their contents here)
+# Keep both files at chmod 600. The tools never read file contents; they only pass the paths.
+gdc_token_path: ~/.gdc/gdc-user-token.txt        # token from the GDC Data Portal (for controlled data)
 ega_credentials_path: ~/.ega/credentials.json    # {"username": "...", "password": "..."}
-dbgap_key_path: ""                               # dbGaP 보호 SRA run용 repository key (.ngc), 필요할 때만
+dbgap_key_path: ""                               # repository key (.ngc) for protected dbGaP SRA runs, only if needed
 
-# ---------------------------------------------------------------- 자원/한도
-max_concurrent_jobs: 4      # 동시에 실행할 job 수 상한 (Nextflow executor.queueSize에도 사용)
-disk_headroom: 1.5          # 다운로드 용량 대비 필요한 디스크 여유 배수
-md5_inline_limit_gb: 20     # 이보다 크면 md5 재검증을 별도 job으로 생성
+# ---------------------------------------------------------------- resources/limits
+max_concurrent_jobs: 4      # max number of concurrent jobs (also used for Nextflow executor.queueSize)
+disk_headroom: 1.5          # required free disk space as a multiple of the download size
+md5_inline_limit_gb: 20     # above this, md5 re-verification is generated as a separate job
 
-transfer_job:               # 다운로드 job 자원
+transfer_job:               # download job resources
   cpus: 4
   mem: 8G
   time: "48:00:00"
   connections: 8            # gdc-client -n / pyega3 -c
 
-nextflow_head_job:          # nextflow 헤드 job 자원 (task는 Nextflow가 따로 제출)
+nextflow_head_job:          # nextflow head job resources (Nextflow submits tasks separately)
   cpus: 2
   mem: 8G
   time: "120:00:00"
 
-# 모든 job 스크립트 앞에 들어갈 명령 (환경 모듈 등)
+# commands prepended to every job script (environment modules, etc.)
 module_loads: []
 #  - module load java/17
 #  - module load nextflow/25.10.4
 
-# 실행 파일 이름/경로 (PATH에 없으면 절대경로로)
+# executable names/paths (use absolute paths if not on PATH)
 tools:
   gdc_client: gdc-client
   pyega3: pyega3
   nextflow: nextflow
 
-# 기관 공통 Nextflow 설정 파일이 있으면 경로 (includeConfig로 추가)
+# path to an institution-wide Nextflow config, if any (added via includeConfig)
 nextflow_extra_config: ""
 
-# ---------------------------------------------------------------- 파이프라인 (버전은 반드시 X.Y.Z로 고정)
-# 2026-10-30 기준 최신 릴리스. 모두 Nextflow >= 25.10.4 필요.
+# ---------------------------------------------------------------- pipelines (versions must be pinned as X.Y.Z)
+# Latest releases as of 2026-10-30. All require Nextflow >= 25.10.4.
 pipelines:
   fetchngs:
     version: "1.13.0"
@@ -70,7 +70,7 @@ pipelines:
     default_params: {}
   rnaseq:
     version: "3.27.0"
-    work_expansion: 3.0     # 입력 용량 대비 work 디렉토리 예상 배수 (디스크 점검용 휴리스틱)
+    work_expansion: 3.0     # expected work directory size as a multiple of input size (heuristic for disk checks)
     plugins: [nf-schema@2.7.2]
     default_params: {}
   sarek:
@@ -79,9 +79,9 @@ pipelines:
     plugins: [nf-core-utils@0.4.0, nf-fgbio@1.0.0, nf-prov@1.7.0, nf-schema@2.7.2]
     default_params: {}
 
-# ---------------------------------------------------------------- 레퍼런스 (로컬 경로 권장)
-# prepare_pipeline(params={"reference": "<이름>"})으로 사용. params 아래 값이 nf-core 파라미터로 그대로 들어갑니다.
-# assembly는 peer-reviewer가 정렬 BAM의 레퍼런스와 비교하는 데 씁니다.
+# ---------------------------------------------------------------- references (local paths recommended)
+# Use via prepare_pipeline(params={"reference": "<name>"}). Values under params are passed through as nf-core parameters.
+# peer-reviewer uses assembly to compare against the reference of aligned BAMs.
 references: {}
 #  GRCh38_gencode_v44:
 #    assembly: GRCh38
@@ -90,7 +90,7 @@ references: {}
 #    params:
 #      fasta: /path/to/GRCh38.primary_assembly.genome.fa
 #      gtf: /path/to/gencode.v44.primary_assembly.annotation.gtf
-#  GRCh38_GDC:                       # GDC 하모나이즈 BAM(GRCh38.d1.vd1)을 sarek에 넣을 때
+#  GRCh38_GDC:                       # for feeding GDC harmonized BAMs (GRCh38.d1.vd1) into sarek
 #    assembly: GRCh38.d1.vd1
 #    build: GRCh38
 #    species: Homo sapiens
@@ -103,5 +103,5 @@ references: {}
 http:
   timeout: 60
   retries: 3
-  contact_email: ""          # NCBI E-utilities 요청에 붙는 연락처 (권장)
-  ncbi_api_key_env: NCBI_API_KEY   # 이 환경변수에 NCBI API key가 있으면 사용
+  contact_email: ""          # contact address attached to NCBI E-utilities requests (recommended)
+  ncbi_api_key_env: NCBI_API_KEY   # NCBI API key is used if set in this environment variable

@@ -1,15 +1,15 @@
-"""cBioPortal study discovery와 datahub tarball manifest.
+"""cBioPortal study discovery and datahub tarball manifest.
 
-근거 (2026-10-30 확인, cBioPortal/cbioportal·cbioportal-frontend·cBioPortalData 소스):
-- GET https://www.cbioportal.org/api/studies?keyword=..&projection=DETAILED  (인증 없음, 페이징 생략 시 전체)
-  keyword는 공백으로 나뉜 각 단어를 study 이름·ID·암종에 대해 대소문자 무시 부분일치(AND)
-  study 필드: studyId, name, description, cancerTypeId, cancerType{name}, allSampleCount, referenceGenome,
+Sources (checked 2026-10-30, cBioPortal/cbioportal, cbioportal-frontend, and cBioPortalData source):
+- GET https://www.cbioportal.org/api/studies?keyword=..&projection=DETAILED  (no auth; omitting paging returns all)
+  keyword: each whitespace-separated word is a case-insensitive substring match (AND) on study name, ID, cancer type
+  study fields: studyId, name, description, cancerTypeId, cancerType{name}, allSampleCount, referenceGenome,
   pmid, citation, publicStudy, readPermission
-- GET /api/studies/{studyId} (없으면 404)
-- study 전체 데이터: https://datahub.assets.cbioportal.org/{studyId}.tar.gz
-  받을 수 있는 study 목록: https://datahub.assets.cbioportal.org/study_list.json (ID 배열)
-  (cbioportal-frontend urls.ts, cBioPortalData R/cBioDataPack.R 와 같은 주소)
-- tarball 크기·체크섬은 공개되지 않는다 -> HEAD Content-Length를 시도하고, 없으면 크기 미상.
+- GET /api/studies/{studyId} (404 if absent)
+- Full study data: https://datahub.assets.cbioportal.org/{studyId}.tar.gz
+  Downloadable studies: https://datahub.assets.cbioportal.org/study_list.json (array of IDs)
+  (same URLs as cbioportal-frontend urls.ts and cBioPortalData R/cBioDataPack.R)
+- Tarball sizes/checksums are not published -> try HEAD Content-Length; if absent, the size is unknown.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def search(
     max_studies: int = 50,
 ) -> dict[str, Any]:
     if not keyword and not study_ids:
-        raise ValueError("keyword 또는 study_ids가 필요합니다.")
+        raise ValueError("keyword or study_ids is required.")
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
     studies: list[dict[str, Any]] = []
@@ -98,7 +98,7 @@ def search(
     out = urlfiles.save_url_query(cfg, db, "cbioportal", rows, {"keyword": keyword, "study_ids": study_ids},
                                   log.calls, extra)
     if len([g for g in extra["by_reference_genome"] if g != "NA"]) > 1:
-        out["warning"] = f"hg19와 hg38 study가 섞여 있습니다: {extra['by_reference_genome']}"
+        out["warning"] = f"hg19 and hg38 studies are mixed: {extra['by_reference_genome']}"
     if missing:
-        out["notes"] = [f"datahub tarball이 없는 study: {missing}. 포털 화면의 다운로드 기능을 쓰거나 다른 버전을 고르세요."]
+        out["notes"] = [f"No datahub tarball for: {missing}. Download from the portal UI or pick another version."]
     return out

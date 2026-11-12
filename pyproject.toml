@@ -3,9 +3,9 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "genomics-dataops-team"
+name = "jige"
 version = "0.1.0"
-description = "Claude Code + MCP 기반 공공 유전체 데이터(GDC/SRA/EGA) DataOps 에이전트 팀"
+description = "DataOps agent team for public genomics data (GDC/SRA/EGA) built on Claude Code + MCP"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -32,5 +32,5 @@ dataops_mcp = ["templates/*.j2"]
 testpaths = ["tests"]
 addopts = "-m 'not live'"
 markers = [
-    "live: 실제 GDC/ENA/NCBI/EGA API를 호출하는 스모크 테스트 (pytest -m live)",
+    "live: smoke tests that call the real GDC/ENA/NCBI/EGA APIs (pytest -m live)",
 ]

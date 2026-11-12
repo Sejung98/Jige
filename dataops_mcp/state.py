@@ -1,10 +1,10 @@
-"""SQLite 상태 저장소: 요청(query), 생성 산출물(artifact), 검수(review), job 기록.
+"""SQLite state store: requests (query), generated artifacts (artifact), reviews (review), and job records.
 
-모든 discovery 결과는 query_id로 저장되고, 이후 단계(전송·처리·검수·제출)는
-query_id와 산출물의 sha256으로 서로 연결된다.
+Every discovery result is stored under a query_id; later stages (transfer, processing, review,
+submission) are linked to each other by query_id and the artifact's sha256.
 
-주의: SQLite는 NFS/Lustre 같은 공유 파일시스템에서 잠금 문제가 생길 수 있다.
-가능하면 state_dir을 홈 디렉토리나 로컬 디스크에 둔다.
+Note: SQLite can have locking problems on shared filesystems such as NFS/Lustre.
+Keep state_dir in the home directory or on a local disk when possible.
 """
 
 from __future__ import annotations

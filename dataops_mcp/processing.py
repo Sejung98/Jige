@@ -1,13 +1,13 @@
-"""처리 준비: nf-core samplesheet 생성과 nextflow 실행 스크립트 생성.
+"""Processing preparation: nf-core samplesheet generation and nextflow run script generation.
 
-samplesheet 스키마(각 파이프라인 assets/schema_input.json 기준):
+Samplesheet schemas (per each pipeline's assets/schema_input.json):
 - nf-core/rnaseq: sample, fastq_1, fastq_2, strandedness(auto|forward|reverse|unstranded)
-  같은 sample 이름의 여러 행은 technical replicate로 합쳐진다.
+  Multiple rows with the same sample name are merged as technical replicates.
 - nf-core/sarek (FASTQ): patient, sex, status, sample, lane, fastq_1, fastq_2
-  (BAM 입력): patient, sex, status, sample, bam, bai
+  (BAM input): patient, sex, status, sample, bam, bai
   status: 0=normal, 1=tumor
 
-파이프라인 버전은 반드시 X.Y.Z 형식의 릴리스 태그로 고정한다(dev/master/latest 금지).
+Pipeline versions must be pinned to an X.Y.Z release tag (dev/master/latest are not allowed).
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from .util import fmt_bytes, has_accession, read_tsv
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 SUPPORTED = ("rnaseq", "sarek")
 
-# nf-core iGenomes 키 -> (build, species)
+# nf-core iGenomes key -> (build, species)
 IGENOMES: dict[str, tuple[str, str]] = {
     "GRCh38": ("GRCh38", "Homo sapiens"),
     "hg38": ("GRCh38", "Homo sapiens"),
@@ -100,12 +100,12 @@ def build_samplesheet(
     patient_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if pipeline not in SUPPORTED:
-        raise ValueError(f"지원 파이프라인: {SUPPORTED}")
+        raise ValueError(f"Supported pipelines: {SUPPORTED}")
     query = _load_query(db, query_id)
     source = query["source"]
     dest_path = Path(dest).expanduser().resolve() if dest else default_dest(cfg, query)
     if not dest_path.exists():
-        raise FileNotFoundError(f"다운로드 위치가 없습니다: {dest_path}. 전송과 verify_download를 먼저 완료하세요.")
+        raise FileNotFoundError(f"Download location does not exist: {dest_path}. Complete the transfer and verify_download first.")
     status_map = status_map or {}
     sex_map = sex_map or {}
     patient_map = patient_map or {}
@@ -117,19 +117,19 @@ def build_samplesheet(
         found, missing = _sra_rows(dest_path, runinfo)
         if missing:
             raise FileNotFoundError(
-                f"{len(missing)}개 run의 FASTQ를 {dest_path}에서 찾지 못했습니다(예: {', '.join(missing[:5])}). "
-                "verify_download로 전송 상태를 확인하세요."
+                f"FASTQ files for {len(missing)} run(s) not found in {dest_path} (e.g. {', '.join(missing[:5])}). "
+                "Check the transfer status with verify_download."
             )
         layouts = {r["run"]: ("PAIRED" if r["r2"] else "SINGLE") for r in found}
         declared = {r["run_accession"]: (r.get("library_layout") or "").upper() for r in runinfo}
         mismatch = [run for run, lay in layouts.items() if declared.get(run) and declared[run] != lay]
         if mismatch:
-            warnings.append(f"메타데이터 layout과 실제 파일이 다른 run: {', '.join(mismatch[:10])}")
+            warnings.append(f"Runs whose metadata layout differs from the actual files: {', '.join(mismatch[:10])}")
         species = sorted({r["info"].get("scientific_name") or "NA" for r in found})
         total = sum(r["r1"].stat().st_size + (r["r2"].stat().st_size if r["r2"] else 0) for r in found)
         if pipeline == "rnaseq":
             if strandedness not in STRANDEDNESS:
-                raise ValueError(f"strandedness는 {STRANDEDNESS} 중 하나")
+                raise ValueError(f"strandedness must be one of {STRANDEDNESS}")
             columns = ["sample", "fastq_1", "fastq_2", "strandedness"]
             rows = []
             for r in found:
@@ -141,14 +141,14 @@ def build_samplesheet(
                 per_sample.setdefault(row["sample"], set()).add("PAIRED" if row["fastq_2"] else "SINGLE")
             mixed = [s for s, v in per_sample.items() if len(v) > 1]
             if mixed:
-                raise ValueError(f"같은 sample에 paired와 single run이 섞여 있습니다: {mixed[:5]}")
+                raise ValueError(f"paired and single runs are mixed within the same sample: {mixed[:5]}")
             strategies = {r["info"].get("library_strategy") for r in found}
             if strategies - {"RNA-Seq"}:
-                warnings.append(f"RNA-Seq 이외 library_strategy 포함: {sorted(s for s in strategies if s)}")
+                warnings.append(f"Includes library_strategy values other than RNA-Seq: {sorted(s for s in strategies if s)}")
         else:  # sarek
             single = [r["run"] for r in found if r["r2"] is None]
             if single:
-                raise ValueError(f"sarek FASTQ 입력은 paired-end만 지원합니다. single-end run: {single[:5]}")
+                raise ValueError(f"sarek FASTQ input supports paired-end only. Single-end runs: {single[:5]}")
             columns = ["patient", "sex", "status", "sample", "lane", "fastq_1", "fastq_2"]
             rows = []
             for r in found:
@@ -163,7 +163,7 @@ def build_samplesheet(
                     "fastq_2": str(r["r2"]),
                 })
             if not status_map:
-                warnings.append("status_map이 없어 모든 샘플을 normal(status=0, germline)로 지정했습니다.")
+                warnings.append("No status_map given, so all samples were set to normal (status=0, germline).")
         meta.update({
             "input_type": "fastq",
             "input_reference": None,
@@ -176,9 +176,9 @@ def build_samplesheet(
     elif source == "gdc":
         if pipeline == "rnaseq":
             raise ValueError(
-                "GDC RNA-seq는 정렬된 BAM과 STAR counts로 제공됩니다. nf-core/rnaseq는 FASTQ 입력이 필요하므로 "
-                "BAM→FASTQ 변환이 필요합니다. 발현량만 필요하면 GDC의 'Gene Expression Quantification'(STAR - Counts) "
-                "파일을 바로 쓰는 것이 일반적입니다."
+                "GDC RNA-seq is provided as aligned BAMs and STAR counts. nf-core/rnaseq needs FASTQ input, so "
+                "BAM→FASTQ conversion would be required. If you only need expression, the usual approach is to use "
+                "GDC's 'Gene Expression Quantification' (STAR - Counts) files directly."
             )
         md = read_tsv(Path(query["manifest_path"]).with_name(f"{query_id}.metadata.tsv"))
         rows, missing_idx = [], []
@@ -188,7 +188,7 @@ def build_samplesheet(
                 continue
             bam = dest_path / r["file_id"] / r["file_name"]
             if not bam.exists():
-                raise FileNotFoundError(f"BAM이 없습니다: {bam}. verify_download를 먼저 실행하세요.")
+                raise FileNotFoundError(f"BAM not found: {bam}. Run verify_download first.")
             bai = next(iter(sorted(bam.parent.glob("*.bai"))), None)
             if bai is None:
                 missing_idx.append(r["file_name"])
@@ -200,9 +200,9 @@ def build_samplesheet(
             rows.append({"patient": patient, "sex": sex_map.get(sample, "NA"), "status": int(status),
                          "sample": sample, "bam": str(bam), "bai": str(bai or "")})
         if not rows:
-            raise ValueError("이 query에 BAM 파일이 없습니다.")
+            raise ValueError("This query has no BAM files.")
         if missing_idx:
-            warnings.append(f"BAI 인덱스가 없는 BAM {len(missing_idx)}개 (gdc-client는 기본적으로 index를 함께 받습니다)")
+            warnings.append(f"{len(missing_idx)} BAM(s) without a BAI index (gdc-client downloads the index with the BAM by default)")
         columns = ["patient", "sex", "status", "sample", "bam", "bai"]
         meta.update({
             "input_type": "bam",
@@ -215,8 +215,8 @@ def build_samplesheet(
         })
     else:
         raise ValueError(
-            "EGA 파일은 파일명과 샘플의 매핑이 데이터셋마다 달라 자동 samplesheet를 만들지 않습니다. "
-            "직접 만든 samplesheet 경로를 prepare_pipeline에 전달하세요."
+            "For EGA, the file-to-sample mapping differs between datasets, so no samplesheet is generated automatically. "
+            "Pass the path of a samplesheet you made yourself to prepare_pipeline."
         )
 
     path = (cfg.samplesheets_dir / f"{query_id}.{pipeline}.csv").resolve()
@@ -241,23 +241,23 @@ def build_samplesheet(
     }
 
 
-# 파라미터를 주지 않았을 때 각 파이프라인이 쓰는 genome 기본값(nextflow_schema.json 기준)
+# Genome default each pipeline uses when the parameter is not given (per nextflow_schema.json)
 PIPELINE_DEFAULT_GENOME = {"rnaseq": None, "sarek": "GATK.GRCh38"}
 
 
 def _resolve_reference(cfg: Config, params: dict[str, Any], pipeline: str | None = None) -> dict[str, Any]:
-    """params의 reference(config.references 이름) 또는 genome(iGenomes 키)을 해석한다."""
+    """Resolve the reference (a config.references name) or genome (an iGenomes key) in params."""
     info: dict[str, Any] = {"label": None, "build": None, "species": None, "assembly": None, "source": None}
     ref_name = params.pop("reference", None)
     if ref_name:
         refs = cfg.get("references", {}) or {}
         if ref_name not in refs:
-            raise KeyError(f"config.references에 {ref_name!r}가 없습니다. 등록된 이름: {sorted(refs)}")
+            raise KeyError(f"{ref_name!r} is not in config.references. Registered names: {sorted(refs)}")
         entry = refs[ref_name]
         for k, v in (entry.get("params") or {}).items():
             params.setdefault(k, v)
         params.setdefault("igenomes_ignore", True)
-        # sarek은 genome 기본값이 GATK.GRCh38이므로 명시적으로 null을 넣어야 커스텀 fasta가 쓰인다.
+        # sarek's genome default is GATK.GRCh38, so genome must be set to null explicitly for the custom fasta to be used.
         params["genome"] = None
         info.update(label=ref_name, build=entry.get("build"), species=entry.get("species"),
                     assembly=entry.get("assembly") or entry.get("build"), source="config")
@@ -285,11 +285,11 @@ def prepare_pipeline(
     run_name: str | None = None,
 ) -> dict[str, Any]:
     if pipeline not in SUPPORTED:
-        raise ValueError(f"지원 파이프라인: {SUPPORTED}")
+        raise ValueError(f"Supported pipelines: {SUPPORTED}")
     version = str(version or cfg.pipeline(pipeline).get("version") or "")
     if not SEMVER.match(version):
         raise ValueError(
-            f"파이프라인 버전은 X.Y.Z 릴리스 태그로 고정해야 합니다(받은 값: {version!r}). dev/master/latest는 금지."
+            f"Pipeline version must be pinned to an X.Y.Z release tag (got: {version!r}). dev/master/latest are not allowed."
         )
     sheet = Path(samplesheet).expanduser().resolve()
     if not sheet.exists():
@@ -298,7 +298,7 @@ def prepare_pipeline(
     sheet_meta = (sheet_art or {}).get("meta", {})
     query_id = (sheet_art or {}).get("query_id")
     if sheet_meta.get("pipeline") and sheet_meta["pipeline"] != pipeline:
-        raise ValueError(f"이 samplesheet는 {sheet_meta['pipeline']}용입니다.")
+        raise ValueError(f"This samplesheet is for {sheet_meta['pipeline']}.")
 
     merged: dict[str, Any] = dict(cfg.pipeline(pipeline).get("default_params") or {})
     merged.update(params or {})
@@ -370,14 +370,14 @@ def prepare_pipeline(
     )
     warnings: list[str] = []
     if not disk["ok"]:
-        warnings.append(f"work 디렉토리 예상 사용량 {fmt_bytes(est)} > 가용 {disk['free_human']}")
+        warnings.append(f"Estimated work directory usage {fmt_bytes(est)} > available {disk['free_human']}")
     prefetch = None
     if offline:
         nf = tools.get("nextflow", "nextflow")
         cache = cfg.path("singularity_cache")
         csys = cfg["container"] if cfg["container"] in ("singularity", "apptainer") else "none"
         prefetch = {
-            "why": "계산 노드에 인터넷이 없으므로 로그인 노드에서 파이프라인 코드·컨테이너·플러그인을 미리 받아야 합니다.",
+            "why": "Compute nodes have no internet, so the pipeline code, containers and plugins must be fetched in advance on the login node.",
             "commands": [
                 f"export NXF_SINGULARITY_CACHEDIR={cache} NXF_APPTAINER_CACHEDIR={cache}",
                 f"{nf} pull nf-core/{pipeline} -r {version}",
@@ -387,8 +387,8 @@ def prepare_pipeline(
             ],
         }
         if ref["source"] in ("igenomes", "igenomes-default"):
-            warnings.append("오프라인 계산 노드에서는 iGenomes(AWS S3) 레퍼런스를 받을 수 없습니다. "
-                            "config.references에 로컬 경로를 등록하고 reference=<이름>을 쓰세요.")
+            warnings.append("Offline compute nodes cannot download iGenomes (AWS S3) references. "
+                            "Register a local path in config.references and use reference=<name>.")
     return {
         "script_path": result["script_path"],
         "log_path": result["log_path"],
@@ -405,5 +405,5 @@ def prepare_pipeline(
         "warnings": warnings,
         "script_text": result["script_text"],
         "params": merged,
-        "next_step": "peer-reviewer 검수 후 사용자 승인을 받아 submit_job을 호출하세요.",
+        "next_step": "After the peer-reviewer review, get user approval and then call submit_job.",
     }

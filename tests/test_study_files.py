@@ -1,4 +1,5 @@
-"""GEO 보조파일, ArrayExpress, PRIDE, Zenodo. 응답 형태는 실제 공개 API 응답 캡처(tests/fixtures)를 쓴다."""
+"""GEO supplementary files, ArrayExpress, PRIDE, Zenodo. Response shapes come from captured real public API
+responses (tests/fixtures)."""
 
 import json
 from pathlib import Path
@@ -94,7 +95,7 @@ def test_arrayexpress_uses_paged_listing_when_json_incomplete(cfg, db, client):
                                   "pagination": {"offset": 0, "limit": 200, "total": 3}})])
     out = biostudies.files(cfg, db, client, accession=acc)
     assert out["summary"]["n_files"] == 3 and out["summary"]["total_bytes"] == 6
-    assert route.calls[0].request.url.params["limit"] == "200"  # 기본 25개 제한을 피한다
+    assert route.calls[0].request.url.params["limit"] == "200"  # avoids the default limit of 25
 
 
 def test_arrayexpress_rejects_bad_accession(cfg, db, client):

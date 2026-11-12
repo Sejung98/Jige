@@ -1,7 +1,7 @@
-"""스케줄러 추상화: slurm / pbs(PBS Pro·OpenPBS) / local(로그인 노드 백그라운드 실행).
+"""Scheduler abstraction: slurm / pbs (PBS Pro, OpenPBS) / local (background run on the login node).
 
-LLM은 스크립트를 '생성'만 하고, 실제 실행은 이 모듈이 sbatch/qsub/bash로 한다.
-제출 가능 여부(승인·검수·dry_run)는 transfer.submit_job이 판단한다.
+The LLM only *generates* scripts; this module does the actual execution via sbatch/qsub/bash.
+Whether a script may be submitted (approval, review, dry_run) is decided by transfer.submit_job.
 """
 
 from __future__ import annotations
@@ -30,12 +30,12 @@ class Resources:
 def _mem_amount(mem: str) -> tuple[int, str]:
     m = re.fullmatch(r"\s*(\d+)\s*([KMGTkmgt])?[Bb]?\s*", str(mem))
     if not m:
-        raise ValueError(f"메모리 형식을 해석할 수 없습니다: {mem!r} (예: 8G, 16000M)")
+        raise ValueError(f"Cannot parse memory format: {mem!r} (e.g. 8G, 16000M)")
     return int(m.group(1)), (m.group(2) or "M").upper()
 
 
 def nf_memory(mem: str) -> str:
-    """'8G' -> '8 GB' (Nextflow 메모리 표기)."""
+    """'8G' -> '8 GB' (Nextflow memory notation)."""
     amount, unit = _mem_amount(mem)
     return f"{amount} {unit}B"
 
@@ -78,7 +78,7 @@ def directives(runner: str, job_name: str, res: Resources, log_path: Path) -> li
             lines.append(f"#PBS -A {res.account}")
         return lines
     if runner == "local":
-        return [f"# runner=local (로그인/전송 노드에서 nohup 실행). log: {log_path}"]
+        return [f"# runner=local (nohup run on the login/transfer node). log: {log_path}"]
     raise ValueError(f"unknown runner {runner!r}")
 
 
@@ -97,7 +97,7 @@ def exit_file_for(script: Path) -> Path:
 
 
 def submit(runner: str, script: Path, log_path: Path, run: Runner = subprocess.run) -> str:
-    """실제 제출. 스케줄러 job id(local은 PID)를 반환."""
+    """Actually submit. Returns the scheduler job id (PID for local)."""
     cmd = submit_command(runner, script)
     if runner == "local":
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -110,9 +110,9 @@ def submit(runner: str, script: Path, log_path: Path, run: Runner = subprocess.r
     exit_file_for(script).unlink(missing_ok=True)
     proc = _try(run, cmd)
     if proc is None:
-        raise RuntimeError(f"`{cmd[0]}`를 찾을 수 없습니다. 이 노드에서 스케줄러를 사용할 수 있는지 확인하세요.")
+        raise RuntimeError(f"`{cmd[0]}` not found. Check that the scheduler is available on this node.")
     if proc.returncode != 0:
-        raise RuntimeError(f"{' '.join(cmd)} 실패 (rc={proc.returncode}): {proc.stderr.strip()[:500]}")
+        raise RuntimeError(f"{' '.join(cmd)} failed (rc={proc.returncode}): {proc.stderr.strip()[:500]}")
     out = proc.stdout.strip()
     if runner == "slurm":
         return out.split(";")[0]
@@ -153,7 +153,7 @@ def _try(run: Runner, cmd: list[str]) -> subprocess.CompletedProcess | None:
 def query_status(
     runner: str, job_id: str, script: Path | None = None, run: Runner = subprocess.run
 ) -> str:
-    """스케줄러 상태를 정규화된 문자열로 반환 (PENDING/RUNNING/COMPLETED/FAILED/... /UNKNOWN)."""
+    """Return the scheduler state as a normalized string (PENDING/RUNNING/COMPLETED/FAILED/... /UNKNOWN)."""
     if runner == "slurm":
         p = _try(run, ["squeue", "-h", "-j", job_id, "-o", "%T"])
         if p is not None and p.returncode == 0 and p.stdout.strip():

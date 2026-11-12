@@ -49,7 +49,7 @@ def local_server(tmp_path):
     srv.shutdown()
 
 
-@pytest.mark.skipif(shutil.which("curl") is None, reason="curl 필요")
+@pytest.mark.skipif(shutil.which("curl") is None, reason="requires curl")
 def test_url_download_script_runs_end_to_end(cfg, db, local_server, monkeypatch):
     for var in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "ALL_PROXY"):
         monkeypatch.delenv(var, raising=False)
@@ -75,7 +75,7 @@ def test_url_download_script_runs_end_to_end(cfg, db, local_server, monkeypatch)
     assert rep["status"] == "FAIL" and rep["md5_mismatch"] == ["bad.txt"]
 
     second = subprocess.run(["bash", script], capture_output=True, text=True)
-    assert "[skip] suppl/good.txt" in second.stdout  # 이미 받은 파일은 건너뜀
+    assert "[skip] suppl/good.txt" in second.stdout  # already-downloaded file is skipped
 
 
 def test_url_source_goes_through_review(cfg, db):
@@ -84,6 +84,6 @@ def test_url_source_goes_through_review(cfg, db):
     rows = [urlfiles.make_row("https://example.org/a.h5ad", size=10, checksum=None)]
     q = urlfiles.save_url_query(cfg, db, "cellxgene", rows, {}, [], {})
     out = transfer.prepare_download(cfg, db, q["query_id"])
-    assert any("체크섬" in w for w in out["warnings"])
+    assert any("no checksum" in w for w in out["warnings"])
     res = review.preflight_check(cfg, db, out["script_path"])
     assert res["verdict"] == "PASS", res["defects"]

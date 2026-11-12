@@ -1,6 +1,6 @@
 {% extends "base.sh.j2" %}
 {% block body %}
-# 대용량 체크섬 검증은 MCP 도구 안에서 하지 않고 job으로 실행한다.
+# Large checksum verification runs as a job, not inside the MCP tool.
 cd {{ dest | q }}
 : > {{ report | q }}
 RC=0
@@ -8,7 +8,7 @@ RC=0
 {{ algo }}sum -c {{ path | q }} >> {{ report | q }} 2>&1 || RC=1
 {% endfor %}
 if [ "$RC" -ne 0 ]; then
-  echo "[dataops] 체크섬 불일치 또는 누락 파일이 있습니다: {{ report }}"
+  echo "[dataops] checksum mismatches or missing files: {{ report }}"
   exit 1
 fi
 {% endblock %}

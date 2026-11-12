@@ -1,4 +1,4 @@
-"""제출 안전장치: dry_run 기본값, confirm 없는 제출 거부, 검수·무결성·동시성 제한."""
+"""Submission safeguards: dry_run default, refusal without confirm, review/integrity/concurrency limits."""
 
 import inspect
 import shutil
@@ -31,7 +31,7 @@ def test_default_call_is_dry_run_and_never_submits(cfg, db, prepared, fake_sched
     assert out["submitted"] is False and out["dry_run"] is True
     assert out["would_run"].startswith("sbatch --parsable")
     assert fake_sched.submits == []
-    assert db.list_jobs() == []  # DRY_RUN은 기본 목록에서 숨김
+    assert db.list_jobs() == []  # DRY_RUN is hidden from the default list
     assert len(db.list_jobs(include_dry_run=True)) == 1
 
 
@@ -87,7 +87,7 @@ def test_script_modified_after_review_is_refused(cfg, db, prepared, fake_sched):
     review.record_review(cfg, db, script, "PASS")
     with open(script, "a") as fh:
         fh.write("rm -rf /tmp/whatever\n")
-    with pytest.raises(transfer.SubmissionRefused, match="변경"):
+    with pytest.raises(transfer.SubmissionRefused, match="changed after generation"):
         transfer.submit_job(cfg, db, script, confirm=True, dry_run=False, run=fake_sched)
 
 
@@ -128,7 +128,7 @@ def test_max_concurrent_jobs(tmp_path, monkeypatch):
     transfer.submit_job(cfg, db, scripts[0], confirm=True, dry_run=False, run=sched)
     with pytest.raises(transfer.SubmissionRefused, match="max_concurrent_jobs"):
         transfer.submit_job(cfg, db, scripts[1], confirm=True, dry_run=False, run=sched)
-    sched.state = ""  # squeue에서 사라지면 sacct(COMPLETED)로 갱신되어 슬롯이 빈다
+    sched.state = ""  # once gone from squeue, sacct (COMPLETED) updates it and frees the slot
     out = transfer.submit_job(cfg, db, scripts[1], confirm=True, dry_run=False, run=sched)
     assert out["submitted"]
 

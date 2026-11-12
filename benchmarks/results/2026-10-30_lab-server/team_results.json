@@ -1,11 +1,11 @@
 {
   "started": "2026-10-30T11:20:02+0900",
   "requests": {
-    "P1": "TCGA-BRCA의 WGS BAM 중 open access인 것 몇 개, 몇 TB인지 알려줘",
-    "P2": "GEO GSE137303의 count matrix(supplementary 파일) 받아줘",
-    "P3": "ENCODE ENCSR356KRQ(ATAC-seq)의 GRCh38 peak(bed) 파일 받아줘",
-    "P4": "SRA run SRR390278의 메타데이터(종, strategy, layout, read 수, FASTQ 크기)",
-    "P5": "Zenodo 레코드 3490058의 파일 받아줘"
+    "P1": "Tell me how many TCGA-BRCA WGS BAMs are open access, and how many TB",
+    "P2": "Download the count matrix (supplementary files) of GEO GSE137303",
+    "P3": "Download the GRCh38 peak files (bed) of ENCODE ENCSR356KRQ (ATAC-seq)",
+    "P4": "Metadata of SRA run SRR390278 (species, strategy, layout, reads, FASTQ size)",
+    "P5": "Download the files of Zenodo record 3490058"
   },
   "team": {
     "P1": {
@@ -104,7 +104,7 @@
             "31620899"
           ],
           "release_date": "2019/09/13",
-          "checksums": "GEO는 체크섬을 제공하지 않아 크기로만 검증합니다."
+          "checksums": "GEO provides no checksums; files are verified by size only."
         },
         "preview": [
           {
@@ -182,7 +182,7 @@
           "script_path": "<workdir>/state/scripts/geo-20261030-112009-3596da/download_20261030-112009.sh",
           "log_path": "<workdir>/state/logs/geo-20261030-112009-3596da_download_20261030-112009.log",
           "log_tail": [
-            "[dataops] start 2026-10-30T11:20:09+09:00 on cpm-server1",
+            "[dataops] start 2026-10-30T11:20:09+09:00 on lab-server",
             "[ok] suppl/GSE137303_count.txt.gz",
             "[ok] matrix/GSE137303_series_matrix.txt.gz",
             "[dataops] done 2026-10-30T11:20:24+09:00"
@@ -206,7 +206,7 @@
           "md5_job_script": null,
           "files_without_checksum": 2,
           "partial_files": [],
-          "note": "gdc-client, pyega3, fetchngs(FTP), URL 다운로드 스크립트는 받은 직후 체크섬을 검증합니다. 여기서는 manifest 대비 파일 존재/크기를 확인하고, check_md5=True면 체크섬(md5/sha1/sha256)을 재검증합니다."
+          "note": "The gdc-client, pyega3, fetchngs (FTP), and URL download scripts verify checksums right after download. This step checks file presence/size against the manifest; with check_md5=True it re-verifies checksums (md5/sha1/sha256)."
         }
       }
     },
@@ -337,7 +337,7 @@
           "script_path": "<workdir>/state/scripts/encode-20261030-112026-1e0c42/download_20261030-112026.sh",
           "log_path": "<workdir>/state/logs/encode-20261030-112026-1e0c42_download_20261030-112026.log",
           "log_tail": [
-            "[dataops] start 2026-10-30T11:20:26+09:00 on cpm-server1",
+            "[dataops] start 2026-10-30T11:20:26+09:00 on lab-server",
             "[ok] ENCSR356KRQ/ENCFF738HJE.bed.gz",
             "[ok] ENCSR356KRQ/ENCFF628TDX.bed.gz",
             "[ok] ENCSR356KRQ/ENCFF551GBG.bed.gz",
@@ -371,7 +371,7 @@
           "md5_job_script": null,
           "files_without_checksum": 0,
           "partial_files": [],
-          "note": "gdc-client, pyega3, fetchngs(FTP), URL 다운로드 스크립트는 받은 직후 체크섬을 검증합니다. 여기서는 manifest 대비 파일 존재/크기를 확인하고, check_md5=True면 체크섬(md5/sha1/sha256)을 재검증합니다."
+          "note": "The gdc-client, pyega3, fetchngs (FTP), and URL download scripts verify checksums right after download. This step checks file presence/size against the manifest; with check_md5=True it re-verifies checksums (md5/sha1/sha256)."
         }
       }
     },
@@ -491,7 +491,7 @@
           "script_path": "<workdir>/state/scripts/zenodo-20261030-112329-cee459/download_20261030-112329.sh",
           "log_path": "<workdir>/state/logs/zenodo-20261030-112329-cee459_download_20261030-112329.log",
           "log_tail": [
-            "[dataops] start 2026-10-30T11:23:29+09:00 on cpm-server1",
+            "[dataops] start 2026-10-30T11:23:29+09:00 on lab-server",
             "[ok] ***REDACTED***",
             "[dataops] done 2026-10-30T11:23:32+09:00"
           ]
@@ -514,12 +514,12 @@
           "md5_job_script": null,
           "files_without_checksum": 0,
           "partial_files": [],
-          "note": "gdc-client, pyega3, fetchngs(FTP), URL 다운로드 스크립트는 받은 직후 체크섬을 검증합니다. 여기서는 manifest 대비 파일 존재/크기를 확인하고, check_md5=True면 체크섬(md5/sha1/sha256)을 재검증합니다."
+          "note": "The gdc-client, pyega3, fetchngs (FTP), and URL download scripts verify checksums right after download. This step checks file presence/size against the manifest; with check_md5=True it re-verifies checksums (md5/sha1/sha256)."
         }
       }
     }
   },
   "finished": "2026-10-30T11:23:33+0900",
   "workdir": "(temporary directory, removed after the run)",
-  "environment": "cpm-server1 (lab server with direct internet), local runner, no Slurm"
+  "environment": "lab-server (lab server with direct internet), local runner, no Slurm"
 }

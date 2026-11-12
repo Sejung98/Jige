@@ -48,5 +48,5 @@ def as_list(value: Any) -> list[str]:
 
 
 def has_accession(filename: str, accession: str) -> bool:
-    """파일명에 accession이 '단어'로 들어있는지 (SRR1이 SRR10에 매칭되지 않도록)."""
+    """Whether the filename contains the accession as a whole 'word' (so SRR1 does not match SRR10)."""
     return re.search(rf"(^|[^A-Za-z0-9]){re.escape(accession)}([^0-9]|$)", filename) is not None

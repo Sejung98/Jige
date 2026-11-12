@@ -26,11 +26,11 @@ from dataops_mcp.http import make_client
 from dataops_mcp.state import StateDB
 
 REQUESTS = {
-    "P1": "TCGA-BRCA의 WGS BAM 중 open access인 것 몇 개, 몇 TB인지 알려줘",
-    "P2": "GEO GSE137303의 count matrix(supplementary 파일) 받아줘",
-    "P3": "ENCODE ENCSR356KRQ(ATAC-seq)의 GRCh38 peak(bed) 파일 받아줘",
-    "P4": "SRA run SRR390278의 메타데이터(종, strategy, layout, read 수, FASTQ 크기)",
-    "P5": "Zenodo 레코드 3490058의 파일 받아줘",
+    "P1": "Tell me how many TCGA-BRCA WGS BAMs are open access, and how many TB",
+    "P2": "Download the count matrix (supplementary files) of GEO GSE137303",
+    "P3": "Download the GRCh38 peak files (bed) of ENCODE ENCSR356KRQ (ATAC-seq)",
+    "P4": "Metadata of SRA run SRR390278 (species, strategy, layout, reads, FASTQ size)",
+    "P5": "Download the files of Zenodo record 3490058",
 }
 
 
@@ -38,12 +38,12 @@ def timed(fn: Callable[[], Any]) -> tuple[Any, float, str | None]:
     t0 = time.time()
     try:
         return fn(), round(time.time() - t0, 2), None
-    except Exception as exc:  # 결과에 그대로 기록
+    except Exception as exc:  # recorded as-is in the results
         return None, round(time.time() - t0, 2), f"{type(exc).__name__}: {exc}"
 
 
 def run_download(cfg, db, query_id: str, timeout: int = 900) -> dict[str, Any]:
-    """prepare → 자동 검수 기록 → confirm 제출(local runner) → 완료 대기 → verify(check_md5)."""
+    """prepare → automatic review record → confirmed submission (local runner) → wait for completion → verify(check_md5)."""
     steps: dict[str, Any] = {}
     prep, steps["prepare_s"], err = timed(lambda: transfer.prepare_download(cfg, db, query_id))
     if err:
@@ -52,7 +52,7 @@ def run_download(cfg, db, query_id: str, timeout: int = 900) -> dict[str, Any]:
     rec, steps["review_s"], err = timed(lambda: review.record_review(cfg, db, script, "PASS"))
     if err or rec["final_verdict"] != "PASS":
         return {**steps, "error": err or "review FAIL", "defects": (rec or {}).get("defects")}
-    dry = transfer.submit_job(cfg, db, script)  # 기본 dry run 확인
+    dry = transfer.submit_job(cfg, db, script)  # check the default dry run
     steps["dry_run_would_run"] = dry["would_run"]
     sub, steps["submit_s"], err = timed(lambda: transfer.submit_job(cfg, db, script, confirm=True, dry_run=False))
     if err:

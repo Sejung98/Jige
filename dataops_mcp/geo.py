@@ -1,15 +1,16 @@
-"""NCBI GEO 처리 데이터(supplementary, series matrix) discovery.
+"""NCBI GEO processed-data (supplementary, series matrix) discovery.
 
-원시 read(FASTQ)는 sra.py(GSE -> SRA run)가 담당하고, 여기서는 GEO에 올라온 파일 자체를 다룬다.
+Raw reads (FASTQ) are handled by sra.py (GSE -> SRA run); this module covers the files deposited in GEO itself.
 
-근거 (2026-10-30 확인):
-- E-utilities esummary db=gds 레코드 필드(accession, title, gdstype, taxon, n_samples, suppfile, ftplink,
-  bioproject, extrelations, pubmedids): R 패키지 GEOquery R/searchGEO.R 및 실제 응답 캡처
-- 디렉토리 규칙: https://ftp.ncbi.nlm.nih.gov/geo/series/{stub}/{GSE}/suppl/ , .../matrix/
-  stub = 마지막 1~3자리 숫자를 'nnn'으로 (GSE1234 -> GSE1nnn, GSE123 -> GSEnnn)
+Sources (checked 2026-10-30):
+- E-utilities esummary db=gds record fields (accession, title, gdstype, taxon, n_samples, suppfile, ftplink,
+  bioproject, extrelations, pubmedids): R package GEOquery R/searchGEO.R and captured live responses
+- Directory layout: https://ftp.ncbi.nlm.nih.gov/geo/series/{stub}/{GSE}/suppl/ , .../matrix/
+  stub = last 1-3 digits replaced with 'nnn' (GSE1234 -> GSE1nnn, GSE123 -> GSEnnn)
   GEOquery R/getGEOSuppFiles.R (gsub("\\d{1,3}$", "nnn", acc)), getDirListing()
-- 디렉토리 목록은 Apache HTML index(크기는 '17M' 같은 근사치)이므로 정확한 크기는 HEAD Content-Length로 얻는다.
-- GEO는 체크섬을 제공하지 않는다(크기로만 검증).
+- Directory listings are Apache HTML indexes (sizes are approximations like '17M'), so exact sizes come from
+  HEAD Content-Length.
+- GEO provides no checksums (size-only verification).
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ def series_dir(accession: str) -> str:
 
 
 def parse_index(html: str) -> list[str]:
-    """Apache 디렉토리 index에서 파일 이름 목록. 상위 디렉토리·정렬 링크·하위 디렉토리·filelist.txt 제외."""
+    """File names from an Apache directory index, skipping parent/sort links, subdirectories and filelist.txt."""
     names = []
     for href in _HREF.findall(html):
         if href.startswith(("http", "/")) or href.endswith("/"):
@@ -55,18 +56,18 @@ def _esummary(cfg: Config, client: httpx.Client, log: http.ApiLog, acc: str, ret
                       params=_eutils_params(cfg, db="gds", term=f"{acc}[ACCN]", retmode="json"), retries=retries).json()
     uids = es.get("esearchresult", {}).get("idlist", [])
     if not uids:
-        raise ValueError(f"GEO에서 {acc}를 찾지 못했습니다.")
+        raise ValueError(f"{acc} not found in GEO.")
     summ = http.request(client, log, "GET", f"{EUTILS}/esummary.fcgi",
                         params=_eutils_params(cfg, db="gds", id=",".join(uids[:500]), retmode="json"),
                         retries=retries).json()
     result = summ.get("result")
     if not result:
-        raise http.ApiError(f"esummary 응답에 result가 없습니다: {str(summ)[:200]}")
+        raise http.ApiError(f"esummary response has no result: {str(summ)[:200]}")
     for uid in result.get("uids", uids):
         rec = result.get(uid, {})
         if str(rec.get("accession", "")).upper() == acc:
             return rec
-    raise ValueError(f"esummary 결과에 {acc} 레코드가 없습니다.")
+    raise ValueError(f"No {acc} record in the esummary result.")
 
 
 def _list_dir(client: httpx.Client, log: http.ApiLog, url: str, retries: int) -> list[str] | None:
@@ -77,7 +78,7 @@ def _list_dir(client: httpx.Client, log: http.ApiLog, url: str, retries: int) ->
             return None
         raise
     if re.search(r"recaptcha|Checking your browser", resp.text, re.I):
-        raise http.ApiError(f"{url}: NCBI가 봇 확인 페이지를 돌려줬습니다. 잠시 후 다시 시도하세요.")
+        raise http.ApiError(f"{url}: NCBI returned a bot-check page. Try again later.")
     return parse_index(resp.text)
 
 
@@ -103,7 +104,7 @@ def files(
 ) -> dict[str, Any]:
     acc = accession.strip().upper()
     if not ACC_RE.match(acc):
-        raise ValueError(f"GSE 또는 GSM accession이어야 합니다: {accession!r}")
+        raise ValueError(f"Must be a GSE or GSM accession: {accession!r}")
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
     rec = _esummary(cfg, client, log, acc, retries)
@@ -123,7 +124,7 @@ def files(
             for name in _list_dir(client, log, f"{sdir}/suppl", retries) or []:
                 candidates.append((f"{sdir}/suppl/{name}", f"samples/{gsm}"))
         if len(samples) > max_samples:
-            notes.append(f"GSM {len(samples)}개 중 {max_samples}개만 조회했습니다(max_samples).")
+            notes.append(f"Queried only {max_samples} of {len(samples)} GSMs (max_samples).")
 
     rows = urlfiles.filter_rows([urlfiles.make_row(u, subdir=d) for u, d in candidates], include, exclude)
     for row in rows:
@@ -131,9 +132,9 @@ def files(
 
     sra_studies = [x.get("targetobject") for x in rec.get("extrelations", []) if x.get("relationtype") == "SRA"]
     if sra_studies or rec.get("bioproject"):
-        notes.append("원시 read(FASTQ)가 필요하면 sra_search(accession='%s')를 쓰세요." % (rec.get("bioproject") or acc))
+        notes.append("For raw reads (FASTQ), use sra_search(accession='%s')." % (rec.get("bioproject") or acc))
     if any(r["filename"].endswith("_RAW.tar") for r in rows) and not include_samples:
-        notes.append("_RAW.tar에 샘플별 파일이 묶여 있습니다. 샘플별로 받으려면 include_samples=True.")
+        notes.append("_RAW.tar bundles the per-sample files. To download them per sample, set include_samples=True.")
     extra = {
         "accession": acc,
         "title": rec.get("title"),
@@ -145,12 +146,12 @@ def files(
         "sra_studies": sra_studies,
         "pubmed_ids": rec.get("pubmedids", []),
         "release_date": rec.get("pdat"),
-        "checksums": "GEO는 체크섬을 제공하지 않아 크기로만 검증합니다.",
+        "checksums": "GEO provides no checksums; files are verified by size only.",
     }
     params = {"accession": acc, "include_matrix": include_matrix, "include_samples": include_samples,
               "include": include, "exclude": exclude}
     out = urlfiles.save_url_query(cfg, db, "geo", rows, params, log.calls, extra)
     out["notes"] = notes
     if not rows:
-        out["hint"] = "공개된 supplementary/matrix 파일이 없습니다. 원시 read만 있는 시리즈일 수 있습니다(sra_search)."
+        out["hint"] = "No public supplementary/matrix files. The series may have raw reads only (sra_search)."
     return out

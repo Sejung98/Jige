@@ -41,7 +41,7 @@ def test_rnaseq_samplesheet_from_sra(cfg, db):
     out = processing.build_samplesheet(cfg, db, qid, "rnaseq", strandedness="reverse")
     assert out["columns"] == ["sample", "fastq_1", "fastq_2", "strandedness"]
     rows = read_tsv(out["samplesheet_path"], delimiter=",")
-    assert len(rows) == 3 and out["n_samples"] == 2  # SAMN1의 두 run은 technical replicate로 합쳐짐
+    assert len(rows) == 3 and out["n_samples"] == 2  # the two runs of SAMN1 are merged as technical replicates
     assert all(r["fastq_1"].endswith("_1.fastq.gz") and r["fastq_2"].endswith("_2.fastq.gz") for r in rows)
     assert {r["strandedness"] for r in rows} == {"reverse"}
     with pytest.raises(ValueError):
@@ -50,7 +50,7 @@ def test_rnaseq_samplesheet_from_sra(cfg, db):
 
 def test_rnaseq_rejects_mixed_layout_within_sample(cfg, db):
     qid = _sra_with_files(cfg, db, [sra_run("SRR1", "SAMN1"), sra_run("SRR2", "SAMN1", layout="SINGLE", sizes=(5,))])
-    with pytest.raises(ValueError, match="paired와 single"):
+    with pytest.raises(ValueError, match="paired and single runs are mixed"):
         processing.build_samplesheet(cfg, db, qid, "rnaseq")
 
 
@@ -96,7 +96,7 @@ def test_prepare_pipeline_requires_pinned_version(cfg, db, bad, monkeypatch):
     sheet = _sheet(cfg, db)
     if bad == "":
         monkeypatch.setitem(cfg.data["pipelines"]["rnaseq"], "version", "")
-    with pytest.raises(ValueError, match="고정"):
+    with pytest.raises(ValueError, match="must be pinned"):
         processing.prepare_pipeline(cfg, db, "rnaseq", sheet, version=bad or None)
 
 
@@ -164,7 +164,7 @@ def test_review_flags_gdc_bam_against_default_sarek_genome(cfg, db):
 
 
 def test_review_flags_lost_mates(cfg, db):
-    # 메타데이터는 PAIRED인데 디스크에는 _1만 있음 -> samplesheet가 SINGLE이 됨
+    # metadata says PAIRED but only _1 is on disk -> samplesheet becomes SINGLE
     qid = _sra_with_files(cfg, db, [sra_run("SRR1", "SAMN1")], layouts={"SRR1": "SINGLE"})
     dest = transfer.default_dest(cfg, db.get_query(qid))
     for p in dest.rglob("*.fastq.gz"):
@@ -203,7 +203,7 @@ def test_review_controlled_access_locations(cfg, db):
     script = transfer.prepare_download(cfg, db, qid, acknowledge_controlled_access=True)["script_path"]
     res = review.preflight_check(cfg, db, script)
     assert _check(res, "controlled_access:dest")[0]["status"] == "FAIL"
-    assert _check(res, "controlled_access:umask")  == []  # umask 077은 들어 있음
+    assert _check(res, "controlled_access:umask")  == []  # umask 077 is present
 
     os.chmod(data, 0o700)
     res = review.preflight_check(cfg, db, script)
@@ -230,7 +230,7 @@ def test_review_fetchngs_for_sarek_with_single_end(cfg, db):
 
 
 def test_run_accession_matching_is_exact(cfg, db):
-    # SRR1의 FASTQ를 찾을 때 SRR10 파일이 섞이면 안 된다
+    # looking up SRR1's FASTQ must not pick up SRR10's files
     qid = _sra_with_files(cfg, db, [sra_run("SRR1", "SAMN1"), sra_run("SRR10", "SAMN10")])
     rows = read_tsv(processing.build_samplesheet(cfg, db, qid, "rnaseq")["samplesheet_path"], delimiter=",")
     by_sample = {r["sample"]: r["fastq_1"] for r in rows}

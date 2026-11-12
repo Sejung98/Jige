@@ -1,11 +1,11 @@
-"""config.yaml 로딩.
+"""Loading config.yaml.
 
-설정 파일 위치 결정 순서:
-1. 환경변수 DATAOPS_CONFIG
-2. <저장소 루트>/config.yaml
+Config file lookup order:
+1. Environment variable DATAOPS_CONFIG
+2. <repository root>/config.yaml
 
-상대경로는 저장소 루트 기준으로 해석한다. `~`와 `$VAR`는 확장한다.
-서버 이름, 사용자명, 절대경로는 코드에 두지 않고 모두 config에서 읽는다.
+Relative paths are resolved against the repository root. `~` and `$VAR` are expanded.
+Server names, user names, and absolute paths are never hard-coded; they all come from config.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ DEFAULTS: dict[str, Any] = {
     "nextflow_head_job": {"cpus": 2, "mem": "8G", "time": "120:00:00"},
     "nextflow_extra_config": "",
     "md5_inline_limit_gb": 20,
-    # 2026-10-30 기준 최신 릴리스. 세 파이프라인 모두 Nextflow >= 25.10.4 필요.
-    # plugins: 오프라인 계산 노드용 사전 설치 목록(각 릴리스 nextflow.config 기준).
+    # Latest releases as of 2026-10-30. All three pipelines require Nextflow >= 25.10.4.
+    # plugins: list to pre-install for offline compute nodes (from each release's nextflow.config).
     "pipelines": {
         "fetchngs": {
             "version": "1.13.0",
@@ -71,7 +71,7 @@ DEFAULTS: dict[str, Any] = {
             "default_params": {},
         },
     },
-    # 레퍼런스: 이름 -> {build, species, fasta, gtf, ...}
+    # references: name -> {build, species, fasta, gtf, ...}
     "references": {},
     "http": {
         "timeout": 60,
@@ -118,7 +118,7 @@ def resolve_path(value: str | os.PathLike | None, base: Path = REPO_ROOT) -> Pat
 
 
 class Config:
-    """설정값 접근 래퍼. `cfg["key"]` 또는 `cfg.path("key")`."""
+    """Wrapper for accessing settings. `cfg["key"]` or `cfg.path("key")`."""
 
     def __init__(self, data: dict[str, Any], source: Path | None, base: Path):
         self.data = data
@@ -159,7 +159,7 @@ class Config:
         return self.data.get("pipelines", {}).get(name, {})
 
     def transfer_runner(self) -> str:
-        """전송 job을 어디서 실행할지: 'local'(로그인 노드) 또는 스케줄러 이름."""
+        """Where to run transfer jobs: 'local' (login node) or the scheduler name."""
         if self.data["transfer_node_mode"] == "login":
             return "local"
         return self.data["scheduler"]
@@ -183,7 +183,7 @@ class Config:
             raise ConfigError("max_concurrent_jobs must be >= 1")
 
     def public_summary(self) -> dict[str, Any]:
-        """도구 출력용 요약. 크리덴셜은 경로만 보여주고 내용은 절대 읽지 않는다."""
+        """Summary for tool output. Credentials are shown by path only; their contents are never read."""
         keys = (
             "scheduler",
             "partition",
@@ -220,7 +220,7 @@ def load_config(path: str | os.PathLike | None = None, *, use_cache: bool = True
             user = yaml.safe_load(fh) or {}
         source = p.resolve()
     data = _deep_merge(DEFAULTS, user)
-    # 상대경로는 config 파일이 있는 디렉토리(=보통 저장소 루트) 기준
+    # relative paths are resolved against the config file's directory (usually the repository root)
     base = source.parent if source else REPO_ROOT
     cfg = Config(data, source, base)
     _CACHE[key] = cfg

@@ -1,12 +1,12 @@
-"""URL manifest 기반 다운로드 공통부.
+"""Shared code for URL-manifest downloads.
 
-GEO 보조 파일, ArrayExpress, ENCODE, CELLxGENE, cBioPortal, PRIDE, Zenodo처럼
-'파일 URL 목록'으로 내려받는 저장소는 모두 같은 manifest 형식을 쓴다.
+Repositories downloaded as a 'list of file URLs' -- GEO supplementary files, ArrayExpress,
+ENCODE, CELLxGENE, cBioPortal, PRIDE, Zenodo -- all use the same manifest format.
 
-manifest TSV 컬럼: url, filename, subdir, size, checksum
-- size: 바이트(모르면 빈칸)
-- checksum: "md5:<hex>" / "sha1:<hex>" / "sha256:<hex>" (모르면 빈칸)
-다운로드 위치: <dest>/<subdir>/<filename>
+manifest TSV columns: url, filename, subdir, size, checksum
+- size: bytes (blank if unknown)
+- checksum: "md5:<hex>" / "sha1:<hex>" / "sha256:<hex>" (blank if unknown)
+download location: <dest>/<subdir>/<filename>
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from .util import fmt_bytes, read_tsv, write_tsv
 
 URL_MANIFEST_COLUMNS = ["url", "filename", "subdir", "size", "checksum"]
 
-# url manifest로 내려받는 source 이름
+# source names downloaded via a URL manifest
 URL_SOURCES = ("geo", "arrayexpress", "encode", "cellxgene", "cbioportal", "pride", "zenodo", "url")
 
 CHECKSUM_ALGOS = ("md5", "sha1", "sha256")
@@ -33,7 +33,7 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._+=-]")
 
 
 def safe_relpath(part: str) -> str:
-    """경로 구성요소에서 위험한 문자와 상위 디렉토리 이동을 제거."""
+    """Strip unsafe characters and parent-directory traversal from a path component."""
     pieces = [p for p in str(part).replace("\\", "/").split("/") if p not in ("", ".", "..")]
     return "/".join(_SAFE_NAME.sub("_", p) for p in pieces)
 
@@ -61,7 +61,7 @@ def make_row(url: str, filename: str | None = None, subdir: str = "", size: Any 
              checksum: str | None = None, default_algo: str = "md5") -> dict[str, Any]:
     scheme = urlparse(url).scheme
     if scheme not in ("https", "http"):
-        raise ValueError(f"https/http URL만 지원합니다: {url}")
+        raise ValueError(f"Only https/http URLs are supported: {url}")
     try:
         size_val = int(size) if size not in (None, "") else ""
     except (TypeError, ValueError):
@@ -85,7 +85,7 @@ def save_url_query(
     summary_extra: dict[str, Any],
     access: str = "open",
 ) -> dict[str, Any]:
-    """URL manifest를 쓰고 query로 저장한 뒤 공통 요약을 돌려준다."""
+    """Write a URL manifest, save it as a query, and return the common summary."""
     if source not in URL_SOURCES:
         raise ValueError(source)
     query_id = new_query_id(source)
@@ -113,7 +113,7 @@ def save_url_query(
         "api_queries": api_calls,
     }
     if rows and len(sizes) < len(rows):
-        out["size_note"] = f"{len(rows) - len(sizes)}개 파일은 크기 정보가 없어 총 용량은 하한값입니다."
+        out["size_note"] = f"{len(rows) - len(sizes)} files have no size information, so the total size is a lower bound."
     return out
 
 
@@ -122,9 +122,9 @@ def read_url_manifest(path: str) -> list[dict[str, str]]:
 
 
 def inspect_urls(cfg: Config, db: StateDB, client: httpx.Client, urls: list[str], subdir: str = "") -> dict[str, Any]:
-    """임의의 공개 파일 URL을 HEAD로 확인(크기·존재)해 manifest로 저장. 롱테일 자원용."""
+    """Check arbitrary public file URLs with HEAD (size, existence) and save them as a manifest. For long-tail resources."""
     if not urls:
-        raise ValueError("urls가 비어 있습니다.")
+        raise ValueError("urls is empty.")
     log = http.ApiLog()
     retries = int(cfg.get("http", {}).get("retries", 3))
     rows, problems = [], []
@@ -138,14 +138,14 @@ def inspect_urls(cfg: Config, db: StateDB, client: httpx.Client, urls: list[str]
             continue
         rows.append(row)
     out = save_url_query(cfg, db, "url", rows, {"urls": urls, "subdir": subdir}, log.calls,
-                         {"source_note": "직접 지정한 URL (HEAD로 존재·크기 확인)"})
+                         {"source_note": "user-specified URLs (existence and size checked with HEAD)"})
     if problems:
         out["unreachable"] = problems
     return out
 
 
 def filter_rows(rows: list[dict[str, Any]], include: list[str] | None, exclude: list[str] | None) -> list[dict[str, Any]]:
-    """파일명/하위경로에 대한 glob 패턴(대소문자 무시) 필터. include가 있으면 하나라도 맞아야 한다."""
+    """Case-insensitive glob filter on filename/subpath. If include is given, at least one pattern must match."""
     from fnmatch import fnmatch
 
     def matches(row: dict[str, Any], patterns: list[str]) -> bool:
